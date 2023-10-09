@@ -1,0 +1,45 @@
+{
+  "name": "nostr-monitoring-tool",
+  "version": "0.1.0",
+  "description": "A simple monitoring tool that classify nostr events (SFW/NSFW, language, topic, sentiment, etc).",
+  "main": "src/index.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "dev": "nodemon --delay 2 -q src/index.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/atrifat/nostr-monitoring-tool.git"
+  },
+  "keywords": [
+    "nostr",
+    "monitoring"
+  ],
+  "author": "Rif'at Ahdi Ramadhani",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/atrifat/nostr-monitoring-tool/issues"
+  },
+  "homepage": "https://github.com/atrifat/nostr-monitoring-tool#readme",
+  "devDependencies": {
+    "@types/node": "^20.8.3",
+    "nodemon": "^3.0.1"
+  },
+  "dependencies": {
+    "@nostr-fetch/adapter-nostr-tools": "^0.13.0",
+    "@ultraq/promise-utils": "^0.7.1",
+    "await-to-js": "^3.0.0",
+    "axios": "^1.5.1",
+    "dotenv": "^16.3.1",
+    "lru-cache": "^10.0.1",
+    "mqtt": "^5.1.0",
+    "nostr": "^0.2.8",
+    "nostr-fetch": "^0.13.0",
+    "nostr-tools": "^1.16.0",
+    "p-limit": "^4.0.0",
+    "url-regex-safe": "^4.0.0",
+    "uuid": "^9.0.1",
+    "websocket-polyfill": "^0.0.3"
+  }
+}
