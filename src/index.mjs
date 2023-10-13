@@ -13,7 +13,8 @@ import {
   extractUrl,
   getUrlType,
   handleFatalError,
-  nMinutesAgo
+  nMinutesAgo,
+  truncateString
 } from "./util.mjs";
 
 import { extractHashtags, isActivityPubUser, hasContentWarning, hasNsfwHashtag } from "./nostr-util.mjs";
@@ -32,6 +33,14 @@ const NODE_ENV = process.env.NODE_ENV || "production";
 const ENABLE_NSFW_CLASSIFICATION = process.env.ENABLE_NSFW_CLASSIFICATION ? process.env.ENABLE_NSFW_CLASSIFICATION === 'true' : false;
 const NSFW_DETECTOR_ENDPOINT = process.env.NSFW_DETECTOR_ENDPOINT || "";
 const NSFW_DETECTOR_TOKEN = process.env.NSFW_DETECTOR_TOKEN || "";
+const ENABLE_LANGUAGE_DETECTION = process.env.ENABLE_LANGUAGE_DETECTION ? process.env.ENABLE_LANGUAGE_DETECTION === 'true' : false;
+const LANGUAGE_DETECTOR_ENDPOINT = process.env.LANGUAGE_DETECTOR_ENDPOINT || "";
+const LANGUAGE_DETECTOR_TOKEN = process.env.LANGUAGE_DETECTOR_TOKEN || "";
+const LANGUAGE_DETECTOR_TRUNCATE_LENGTH = parseInt(process.env.LANGUAGE_DETECTOR_TRUNCATE_LENGTH || "350");
+if (Number.isNaN(LANGUAGE_DETECTOR_TRUNCATE_LENGTH) || LANGUAGE_DETECTOR_TRUNCATE_LENGTH < 0) {
+  handleFatalError(new Error("Invalid LANGUAGE_DETECTOR_TRUNCATE_LENGTH"));
+}
+
 const NOSTR_MONITORING_BOT_PRIVATE_KEY = process.env.NOSTR_MONITORING_BOT_PRIVATE_KEY || handleFatalError(new Error("NOSTR_MONITORING_BOT_PRIVATE_KEY is required"));
 const RELAYS_SOURCE =
   (typeof process.env.RELAYS_SOURCE !== "undefined" &&
@@ -99,6 +108,54 @@ function axiosRetryStrategy(result, error, attempts) {
   return !!error && attempts < 2 ? attempts * 250 : -1;
 }
 
+// Regex for text preprocessing
+const MentionNostrEntityRegex = /(nostr:)?@?(nsec1|npub1|nevent1|naddr1|note1|nprofile1|nrelay1)([qpzry9x8gf2tvdw0s3jn54khce6mua7l]+)([\\\\S]*)/gi;
+const unnecessaryCharRegex = /([#*!?:(){}|\[\].,+\-_–—=<>%@&$"“”’'`~;/\\\t\r\n]|\d+|[【】「」（）。°•…])/g;
+const commonEmojiRegex = /([\uE000-\uF8FF]|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]|\p{Emoji})/gu;
+
+const detectLanguagePromiseGenerator = function (text) {
+  const reqHeaders = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    // 'Authorization': `Bearer ${LANGUAGE_DETECTOR_TOKEN}`
+  };
+  return retry(() => axios({
+    url: LANGUAGE_DETECTOR_ENDPOINT,
+    method: 'POST',
+    headers: reqHeaders,
+    data: { "q": text, "api_key": LANGUAGE_DETECTOR_TOKEN }
+  }), axiosRetryStrategy);
+};
+
+const detectLanguage = async function (text) {
+  const result = await detectLanguagePromiseGenerator(text);
+  return result;
+}
+
+const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedId, taggedAuthor) => {
+  let languageClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 9978,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ["d", "nostr-language-classification"],
+      ["t", "nostr-language-classification"],
+      ["e", taggedId],
+      ["p", taggedAuthor],
+    ],
+    content: JSON.stringify(detectedLanguage),
+    sig: ""
+  }
+  languageClassificationEvent.id = getEventHash(languageClassificationEvent);
+  languageClassificationEvent.sig = getSignature(languageClassificationEvent, privateKey);
+  let ok = validateEvent(languageClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(languageClassificationEvent);
+  if (!veryOk) return undefined;
+  return languageClassificationEvent;
+};
+
 const classifyUrlNsfwDetectorPromiseGenerator = function (url) {
   const reqHeaders = {
     'Content-Type': 'application/json',
@@ -125,8 +182,8 @@ const classifyUrlNsfwDetector = async (imgUrl, metadata) => {
     output.has_content_warning = metadata.has_content_warning;
     output.has_nsfw_hashtag = metadata.has_nsfw_hashtag;
 
-    const nsfwProbability = 1 - parseFloat(item.value.data.data.neutral);
     if (item.status === 'fulfilled') {
+      const nsfwProbability = 1 - parseFloat(item.value.data.data.neutral);
       output.status = true;
       output.data = item.value.data.data;
       output.probably_nsfw = nsfwProbability >= 0.75;
@@ -290,6 +347,80 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     }
 
   }
+
+  // Broadcast nostr note events to target relay
+  await publishNostrEvent(pool, relaysToPublish, ev);
+
+  if (ENABLE_LANGUAGE_DETECTION) {
+    const startTime = performance.now();
+    let err, detectedLanguageResponse;
+    let text = content;
+    const preprocessStartTime = performance.now();
+    // Preprocess to replace any NIP-19 mentions (nostr:npub1, nevent1, note1, etc.)
+    text = text.replace(MentionNostrEntityRegex, ' ');
+
+    // Preprocess to remove links
+    for (let index = 0; index < extractedUrl.length; index++) {
+      const url = extractedUrl[index];
+      text = text.replaceAll(url, ' ');
+    }
+
+    // Preprocess to remove unnecessary characters
+    text = text.replace(unnecessaryCharRegex, ' ');
+
+    // Remove unicode emojis
+    text = text.replace(commonEmojiRegex, ' ');
+
+    // Replace multiple spaces character into single space character
+    text = text.replace(/\s+/g, ' ').trim();
+
+    // Truncate text if needed
+    if (LANGUAGE_DETECTOR_TRUNCATE_LENGTH > 0) {
+      text = truncateString(text, LANGUAGE_DETECTOR_TRUNCATE_LENGTH);
+    }
+
+    const preprocessElapsedTime = performance.now() - preprocessStartTime;
+
+    if (text !== '') {
+      [err, detectedLanguageResponse] = await to.default(detectLanguage(text));
+      if (err) {
+        console.error("Error:", err.message);
+      }
+    }
+    else {
+      console.debug("Empty text after preprocessing, original text = ", content);
+      err = new Error("Empty text");
+    }
+
+    const elapsedTime = performance.now() - startTime;
+    const defaultResult = [{ confidence: 0, language: 'en' }];
+    const detectedLanguage = (!err) ? detectedLanguageResponse.data : defaultResult;
+
+    // console.debug(text);
+    console.debug("detectedLanguage", JSON.stringify(detectedLanguage), elapsedTime);
+    // console.debug(preprocessElapsedTime);
+    // console.debug(elapsedTime);
+    // if (elapsedTime > 300) {
+    //   console.debug(text);
+    //   console.debug(detectedLanguage);
+    //   console.debug(preprocessElapsedTime);
+    //   console.debug(elapsedTime);
+    // }
+
+    const languageClassificationEvent = createLanguageClassificationEvent(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author);
+    // console.debug(languageClassificationEvent);
+
+    // Publish languageClassificationEvent
+    await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent);
+
+    mqttClient.forEach((client) => {
+      if (ENABLE_MQTT_PUBLISH) {
+        client.publishAsync('nostr-language-classification', JSON.stringify(languageClassificationEvent)).then(() => {
+          console.log(client.options.host, "nostr-language-classification", "Published");
+        });
+      }
+    });
+  }
 };
 
 let eventCounter = {};
@@ -330,8 +461,8 @@ const handleNostrEvent = async (relay, sub_id, ev) => {
 
   // Only process events not older than sixty minutes ago
   if (ev.created_at < nMinutesAgo(60)) {
-    console.warn("Event older than 60 minutes ago from", relay.url);
-    console.warn(JSON.stringify(ev));
+    // console.warn("Event older than 60 minutes ago from", relay.url);
+    // console.warn(JSON.stringify(ev));
     return;
   }
 
@@ -352,14 +483,13 @@ const handleNostrEvent = async (relay, sub_id, ev) => {
         break;
 
       default:
+        // Broadcast nostr events to target relay
+        await publishNostrEvent(pool, relaysToPublish, ev);
         break;
     }
   } catch (error) {
     console.error(error);
   }
-
-  // Broadcast nostr events to target relay
-  await publishNostrEvent(pool, relaysToPublish, ev);
 };
 
 async function runRelayPool() {
