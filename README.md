@@ -7,7 +7,7 @@ A simple monitoring tool that classify nostr events (sfw/nsfw, language, topic, 
 It will classify note events (kind: 1) content in various category such as:
 
 - [x] NSFW/SFW content detection using [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api)
-- [ ] (Planned) Language detection
+- [x] Language detection using [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
 - [ ] (Planned) Topic classification
 - [ ] (Planned) Sentiment analysis
 - [ ] (Planned) Hate-speech detection
