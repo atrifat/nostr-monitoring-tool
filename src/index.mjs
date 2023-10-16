@@ -348,9 +348,6 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
   }
 
-  // Broadcast nostr note events to target relay
-  await publishNostrEvent(pool, relaysToPublish, ev);
-
   if (ENABLE_LANGUAGE_DETECTION) {
     const startTime = performance.now();
     let err, detectedLanguageResponse;
@@ -421,6 +418,9 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       }
     });
   }
+
+  // Broadcast nostr note events to target relay after classification
+  await publishNostrEvent(pool, relaysToPublish, ev);
 };
 
 let eventCounter = {};
