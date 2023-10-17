@@ -2,15 +2,19 @@
 
 A simple monitoring tool that classify nostr events (sfw/nsfw, language, topic, sentiment, etc). Currently, this is still a PoC (Proof of Concept) with alpha quality which code can be **changed** drastically.
 
-## What it does?
+## Features
 
 It will classify note events (kind: 1) content in various category such as:
 
 - [x] NSFW/SFW content detection using [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api)
 - [x] Language detection using [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
-- [ ] (Planned) Topic classification
 - [ ] (Planned) Sentiment analysis
 - [ ] (Planned) Hate-speech detection
+- [ ] (Planned) Topic classification
+
+## Requirements
+- Personal instance of [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api)
+- Personal instance of [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
 
 ## Getting Started
 
@@ -27,7 +31,7 @@ install its dependencies
 npm install
 ```
 
-Before running this tool, make sure you have already run your own [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api) instance since it is required for NSFW content detection.
+Before running this tool, make sure you have already run your own [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api) and [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) instance since it is required for content classification.
 
 Copy `.env.example` into `.env` and change `.env` value properly
 ```
@@ -46,7 +50,7 @@ or run it using node command directly
 node src/index.mjs
 ```
 
-This tool will classify note events and publish classification result as nostr event (kind: 9978). For NSFW classification, it will publish classification event using **'d'** tag with **'nostr-nsfw-classification'**. Other classification tag (language detection, topic classification, etc.) will be defined later. Classification events can be used in another tool to filter note events.
+This tool will classify note events and publish classification result as nostr event (kind: 9978). For NSFW classification, it will publish classification event using **'d'** tag with **'nostr-nsfw-classification'**. For language detection, it will publish classification event using **'d'** tag with **'nostr-language-classification'**. Other classification tag (topic classification, sentiment analysis, etc.) will be defined later. Classification events can be used in another tool to filter note events.
 
 Classification Event Example:
 
