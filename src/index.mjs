@@ -313,7 +313,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     console.debug('nsfwClassificationData = ', JSON.stringify(nsfwClassificationData));
 
     const nsfwClassificationEvent = createNsfwClassificationEvent(nsfwClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY,
-      metadata.id, metadata.author);
+      metadata.id, metadata.author, created_at);
 
     // Publish classification event
     await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
@@ -403,7 +403,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     //   console.debug(elapsedTime);
     // }
 
-    const languageClassificationEvent = createLanguageClassificationEvent(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author);
+    const languageClassificationEvent = createLanguageClassificationEvent(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
     // console.debug(languageClassificationEvent);
 
     // Publish languageClassificationEvent
