@@ -57,6 +57,7 @@ if (RELAYS_SOURCE.length === 0) handleFatalError(new Error("RELAYS_SOURCE is req
 if (RELAYS_TO_PUBLISH.length === 0) handleFatalError(new Error("RELAYS_TO_PUBLISH is required"));
 
 const DELAYS_BEFORE_PUBLISHING_NOTES = parseInt(process.env.DELAYS_BEFORE_PUBLISHING_NOTES || "1000");
+const ALLOW_EVENTS_NOT_OLDER_THAN_MINUTES = parseInt(process.env.ALLOW_EVENTS_NOT_OLDER_THAN_MINUTES || "10");
 
 const ENABLE_MQTT_PUBLISH = process.env.ENABLE_MQTT_PUBLISH ? process.env.ENABLE_MQTT_PUBLISH === 'true' : false;
 
@@ -82,11 +83,7 @@ if (NODE_ENV === "production") {
 
 const eventCache = new LRUCache(
   {
-    max: 500,
-    maxSize: 5000,
-    sizeCalculation: (value, key) => {
-      return value.toString().length;
-    },
+    max: 5000,
     // how long to live in ms
     ttl: 300000,
   }
@@ -463,9 +460,9 @@ const handleNostrEvent = async (relay, sub_id, ev) => {
     return;
   }
 
-  // Only process events not older than sixty minutes ago
-  if (ev.created_at < nMinutesAgo(60)) {
-    // console.warn("Event older than 60 minutes ago from", relay.url);
+  // Only process events not older than (n) minutes ago
+  if (ev.created_at < nMinutesAgo(ALLOW_EVENTS_NOT_OLDER_THAN_MINUTES)) {
+    // console.warn("Event older than " + ALLOW_EVENTS_NOT_OLDER_THAN_MINUTES + " minutes ago from", relay.url);
     // console.warn(JSON.stringify(ev));
     return;
   }
