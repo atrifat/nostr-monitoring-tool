@@ -131,12 +131,12 @@ const detectLanguage = async function (text) {
   return result;
 }
 
-const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedId, taggedAuthor) => {
+const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedId, taggedAuthor, createdAt) => {
   let languageClassificationEvent = {
     id: "",
     pubkey: getPublicKey(privateKey),
     kind: 9978,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: (createdAt !== undefined) ? createdAt:Math.floor(Date.now() / 1000),
     tags: [
       ["d", "nostr-language-classification"],
       ["t", "nostr-language-classification"],
@@ -222,12 +222,12 @@ const classifyUrlNsfwDetector = async (imgUrl, metadata) => {
   return classificationData;
 };
 
-const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, taggedId, taggedAuthor) => {
+const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, taggedId, taggedAuthor, createdAt) => {
   let nsfwClassificationEvent = {
     id: "",
     pubkey: getPublicKey(privateKey),
     kind: 9978,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: (createdAt !== undefined) ? createdAt: Math.floor(Date.now() / 1000),
     tags: [
       ["d", "nostr-nsfw-classification"],
       ["t", "nostr-nsfw-classification"],
@@ -313,7 +313,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     console.debug('nsfwClassificationData = ', JSON.stringify(nsfwClassificationData));
 
     const nsfwClassificationEvent = createNsfwClassificationEvent(nsfwClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY,
-      metadata.id, metadata.author);
+      metadata.id, metadata.author, created_at);
 
     // Publish classification event
     await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
@@ -403,7 +403,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     //   console.debug(elapsedTime);
     // }
 
-    const languageClassificationEvent = createLanguageClassificationEvent(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author);
+    const languageClassificationEvent = createLanguageClassificationEvent(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
     // console.debug(languageClassificationEvent);
 
     // Publish languageClassificationEvent
