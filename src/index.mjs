@@ -82,11 +82,7 @@ if (NODE_ENV === "production") {
 
 const eventCache = new LRUCache(
   {
-    max: 500,
-    maxSize: 5000,
-    sizeCalculation: (value, key) => {
-      return value.toString().length;
-    },
+    max: 5000,
     // how long to live in ms
     ttl: 300000,
   }
