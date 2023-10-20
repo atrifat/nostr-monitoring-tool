@@ -131,12 +131,12 @@ const detectLanguage = async function (text) {
   return result;
 }
 
-const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedId, taggedAuthor) => {
+const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedId, taggedAuthor, createdAt) => {
   let languageClassificationEvent = {
     id: "",
     pubkey: getPublicKey(privateKey),
     kind: 9978,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: (createdAt !== undefined) ? createdAt:Math.floor(Date.now() / 1000),
     tags: [
       ["d", "nostr-language-classification"],
       ["t", "nostr-language-classification"],
@@ -222,12 +222,12 @@ const classifyUrlNsfwDetector = async (imgUrl, metadata) => {
   return classificationData;
 };
 
-const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, taggedId, taggedAuthor) => {
+const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, taggedId, taggedAuthor, createdAt) => {
   let nsfwClassificationEvent = {
     id: "",
     pubkey: getPublicKey(privateKey),
     kind: 9978,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: (createdAt !== undefined) ? createdAt: Math.floor(Date.now() / 1000),
     tags: [
       ["d", "nostr-nsfw-classification"],
       ["t", "nostr-nsfw-classification"],
