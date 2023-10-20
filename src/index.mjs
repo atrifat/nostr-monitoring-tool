@@ -56,6 +56,8 @@ const RELAYS_TO_PUBLISH =
 if (RELAYS_SOURCE.length === 0) handleFatalError(new Error("RELAYS_SOURCE is required"));
 if (RELAYS_TO_PUBLISH.length === 0) handleFatalError(new Error("RELAYS_TO_PUBLISH is required"));
 
+const DELAYS_BEFORE_PUBLISHING_NOTES = parseInt(process.env.DELAYS_BEFORE_PUBLISHING_NOTES || "1000");
+
 const ENABLE_MQTT_PUBLISH = process.env.ENABLE_MQTT_PUBLISH ? process.env.ENABLE_MQTT_PUBLISH === 'true' : false;
 
 const MQTT_BROKER_TO_PUBLISH =
@@ -419,8 +421,10 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     });
   }
 
-  // Broadcast nostr note events to target relay after classification
-  await publishNostrEvent(pool, relaysToPublish, ev);
+  // Broadcast nostr note events to target relay after classification with some delay
+  setTimeout(async () => {
+    await publishNostrEvent(pool, relaysToPublish, ev);
+  }, DELAYS_BEFORE_PUBLISHING_NOTES);
 };
 
 let eventCounter = {};
