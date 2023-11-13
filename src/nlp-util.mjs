@@ -8,6 +8,7 @@ export const MentionNostrEntityRegex = /(nostr:)?@?(nsec1|npub1|nevent1|naddr1|n
 export const unnecessaryCharRegex = /([#*!?:(){}|\[\].,+\-_–—=<>%@&$~;/\\\t\r\n]|\d+|[【】「」（）。°•…])/g;
 export const fullUnnecessaryCharRegex = /([#*!?:(){}|\[\].,+\-_–—=<>%@&$"“”’'`~;/\\\t\r\n]|\d+|[【】「」（）。°•…])/g;
 export const commonEmojiRegex = /([\uE000-\uF8FF]|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]|\p{Emoji})/gu;
+export const hexStringRegex = /(0x)?[0-9a-f]{6,}/ig;
 
 // List of non good words pattern
 export const n1ggerPatternRegex = /(\w+)?(n(i|1|l|\||!)g{2,}(ay?|ers?|4|3rs?|uh))/ig;
