@@ -10,7 +10,7 @@ export const fullUnnecessaryCharRegex = /([#*!?:(){}|\[\].,+\-_–—=<>%@&$"“
 export const commonEmojiRegex = /([\uE000-\uF8FF]|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]|\p{Emoji})/gu;
 
 // List of non good words pattern
-export const n1ggerPatternRegex = /n(i|1|l|\||!)g{2,}(ay?|ers?|4|3rs?|uh)/ig;
+export const n1ggerPatternRegex = /(\w+)?(n(i|1|l|\||!)g{2,}(ay?|ers?|4|3rs?|uh))/ig;
 export const n1ggersCommonForm = 'n' + 'i' + 'g' + 'g' + 'e' + 'r' + 's';
 export const f4ggotsPatternRegex = /fags?(\s|\n|\.|,|\?|!|'|"|\(|\)|\[|\]|{|}|$)|faggots/ig;
 export const f4ggotsCommonForm = 'f' + 'a' + 'g' + 'g' + 'o' + 't';
