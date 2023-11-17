@@ -26,6 +26,19 @@ import { connectAsync } from "mqtt";
 import { v4 as uuidv4 } from 'uuid';
 import pLimit from 'p-limit';
 import { exit } from "node:process";
+import { TokenizerEn, NormalizerEn } from "@nlpjs/lang-en";
+import { 
+  MentionNostrEntityRegex,
+  unnecessaryCharRegex,
+  fullUnnecessaryCharRegex,
+  commonEmojiRegex,
+  ordinalPatternRegex,
+  zapPatternRegex,
+  hexStringRegex,
+  separateCamelCaseWordsHashtag,
+  reduceRepeatingCharacters,
+  normalizedNonGoodWordsPattern
+} from "./nlp-util.mjs"
 
 // Load env variable from .env
 dotenv.config();
@@ -39,6 +52,14 @@ const LANGUAGE_DETECTOR_TOKEN = process.env.LANGUAGE_DETECTOR_TOKEN || "";
 const LANGUAGE_DETECTOR_TRUNCATE_LENGTH = parseInt(process.env.LANGUAGE_DETECTOR_TRUNCATE_LENGTH || "350");
 if (Number.isNaN(LANGUAGE_DETECTOR_TRUNCATE_LENGTH) || LANGUAGE_DETECTOR_TRUNCATE_LENGTH < 0) {
   handleFatalError(new Error("Invalid LANGUAGE_DETECTOR_TRUNCATE_LENGTH"));
+}
+
+const ENABLE_HATE_SPEECH_DETECTION = process.env.ENABLE_HATE_SPEECH_DETECTION ? process.env.ENABLE_HATE_SPEECH_DETECTION === 'true' : false;
+const HATE_SPEECH_DETECTOR_ENDPOINT = process.env.HATE_SPEECH_DETECTOR_ENDPOINT || "";
+const HATE_SPEECH_DETECTOR_TOKEN = process.env.HATE_SPEECH_DETECTOR_TOKEN || "";
+const HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH = parseInt(process.env.HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH || "350");
+if (Number.isNaN(HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH) || HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH < 0) {
+  handleFatalError(new Error("Invalid HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH"));
 }
 
 const NOSTR_MONITORING_BOT_PRIVATE_KEY = process.env.NOSTR_MONITORING_BOT_PRIVATE_KEY || handleFatalError(new Error("NOSTR_MONITORING_BOT_PRIVATE_KEY is required"));
@@ -90,6 +111,8 @@ const eventCache = new LRUCache(
 );
 
 const requestLimiter = pLimit(10);
+const stringNormalizer = new NormalizerEn();
+const stringTokenizer = new TokenizerEn();
 
 let mqttBroker = (ENABLE_MQTT_PUBLISH) ? MQTT_BROKER_TO_PUBLISH : [];
 let mqttClient = (await Promise.allSettled(mqttBroker.map(url => connectAsync(url))))
@@ -106,11 +129,6 @@ let relaysToPublish = RELAYS_TO_PUBLISH;
 function axiosRetryStrategy(result, error, attempts) {
   return !!error && attempts < 2 ? attempts * 250 : -1;
 }
-
-// Regex for text preprocessing
-const MentionNostrEntityRegex = /(nostr:)?@?(nsec1|npub1|nevent1|naddr1|note1|nprofile1|nrelay1)([qpzry9x8gf2tvdw0s3jn54khce6mua7l]+)([\\\\S]*)/gi;
-const unnecessaryCharRegex = /([#*!?:(){}|\[\].,+\-_–—=<>%@&$"“”’'`~;/\\\t\r\n]|\d+|[【】「」（）。°•…])/g;
-const commonEmojiRegex = /([\uE000-\uF8FF]|\uD83C[\uDF00-\uDFFF]|\uD83D[\uDC00-\uDDFF]|\p{Emoji})/gu;
 
 const detectLanguagePromiseGenerator = function (text) {
   const reqHeaders = {
@@ -246,6 +264,49 @@ const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, tagge
   return nsfwClassificationEvent;
 };
 
+const detectHateSpeechPromiseGenerator = function (text) {
+  const reqHeaders = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    // 'Authorization': `Bearer ${LANGUAGE_DETECTOR_TOKEN}`
+  };
+  return retry(() => axios({
+    url: HATE_SPEECH_DETECTOR_ENDPOINT,
+    method: 'POST',
+    headers: reqHeaders,
+    data: { "q": text, "api_key": HATE_SPEECH_DETECTOR_TOKEN }
+  }), axiosRetryStrategy);
+};
+
+const detectHateSpeech = async function (text) {
+  const result = await detectHateSpeechPromiseGenerator(text);
+  return result;
+}
+
+const createHateSpeechClassificationEvent = (detectedHateSpeech, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let hateSpeechClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 9978,
+    created_at: (createdAt !== undefined) ? createdAt:Math.floor(Date.now() / 1000),
+    tags: [
+      ["d", "nostr-hate-speech-classification"],
+      ["t", "nostr-hate-speech-classification"],
+      ["e", taggedId],
+      ["p", taggedAuthor],
+    ],
+    content: JSON.stringify(detectedHateSpeech),
+    sig: ""
+  }
+  hateSpeechClassificationEvent.id = getEventHash(hateSpeechClassificationEvent);
+  hateSpeechClassificationEvent.sig = getSignature(hateSpeechClassificationEvent, privateKey);
+  let ok = validateEvent(hateSpeechClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(hateSpeechClassificationEvent);
+  if (!veryOk) return undefined;
+  return hateSpeechClassificationEvent;
+};
+
 const publishNostrEvent = async (pool, relaysToPublish, event) => {
   try {
     let pubs = pool.publish(relaysToPublish, event);
@@ -294,6 +355,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
   const imgUrl = extractedUrl.filter((url) => getUrlType(url) === 'image') ?? [];
   console.debug('Img url = ', imgUrl.join(', '));
 
+  // NSFW classification event processing
   if (ENABLE_NSFW_CLASSIFICATION && imgUrl.length > 0) {
     let metadata = {};
     metadata.id = id;
@@ -347,6 +409,8 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
   }
 
+  // Language detection event processing
+  let isEnglish = false;
   if (ENABLE_LANGUAGE_DETECTION) {
     const startTime = performance.now();
     let err, detectedLanguageResponse;
@@ -362,7 +426,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     }
 
     // Preprocess to remove unnecessary characters
-    text = text.replace(unnecessaryCharRegex, ' ');
+    text = text.replace(fullUnnecessaryCharRegex, ' ');
 
     // Remove unicode emojis
     text = text.replace(commonEmojiRegex, ' ');
@@ -375,10 +439,11 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       text = truncateString(text, LANGUAGE_DETECTOR_TRUNCATE_LENGTH);
     }
 
+    const finalText = text;
     const preprocessElapsedTime = performance.now() - preprocessStartTime;
 
-    if (text !== '') {
-      [err, detectedLanguageResponse] = await to.default(detectLanguage(text));
+    if (finalText !== '') {
+      [err, detectedLanguageResponse] = await to.default(detectLanguage(finalText));
       if (err) {
         console.error("Error:", err.message);
       }
@@ -391,6 +456,14 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     const elapsedTime = performance.now() - startTime;
     const defaultResult = [{ confidence: 0, language: 'en' }];
     const detectedLanguage = (!err) ? detectedLanguageResponse.data : defaultResult;
+
+    for (let i = 0; i < detectedLanguage.length; i++) {
+      const languageData = detectedLanguage[i];
+      if (languageData.confidence >= 50 && languageData.language === 'en') {
+        isEnglish = true;
+        break;
+      } 
+    }
 
     // console.debug(text);
     console.debug("detectedLanguage", JSON.stringify(detectedLanguage), elapsedTime);
@@ -416,6 +489,135 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
         });
       }
     });
+  }
+
+  // Hate speech detection event processing
+  if (ENABLE_HATE_SPEECH_DETECTION && isEnglish) {
+    const startTime = performance.now();
+    let err, detectedHateSpeechResponse;
+    let text = content;
+    const preprocessStartTime = performance.now();
+    // Preprocess to replace any NIP-19 mentions (nostr:npub1, nevent1, note1, etc.)
+    text = text.replace(MentionNostrEntityRegex, ' ');
+
+    // Preprocess to remove links
+    for (let index = 0; index < extractedUrl.length; index++) {
+      const url = extractedUrl[index];
+      text = text.replaceAll(url, ' ');
+    }
+
+    // Preprocess to remove ordinal pattern such as: 2nd, 3rd, etc.
+    text = text.replace(ordinalPatternRegex, '');
+
+    text = reduceRepeatingCharacters(text);
+    text = separateCamelCaseWordsHashtag(text);
+    text = normalizedNonGoodWordsPattern(text);
+
+    // Transform zap/zapathon into "tip" to reduce false positive
+    text = text.replace(zapPatternRegex, 'tip');
+
+    // Preprocess to remove hex string characters
+    text = text.replace(hexStringRegex, ' ');
+
+    // Preprocess to remove unnecessary characters (excluding single quote or double quote)
+    text = text.replace(unnecessaryCharRegex, ' ');
+
+    text = stringTokenizer.tokenize(text).join(' ');
+    text = stringNormalizer.normalize(text);
+
+    // Remove unicode emojis (disabled by default, since emoji is important in sentiment analysis and hate speech detection)
+    // text = text.replace(commonEmojiRegex, ' ');
+    
+    // Preprocess to remove full unnecessary characters (including single quote or double quote)
+    text = text.replace(fullUnnecessaryCharRegex, '');
+
+    // Replace multiple spaces character into single space character
+    text = text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+    // Truncate text if needed
+    if (HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH > 0) {
+      text = truncateString(text, HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH);
+    }
+
+    const finalText = text;
+    const preprocessElapsedTime = performance.now() - preprocessStartTime;
+
+    if (finalText !== '') {
+      [err, detectedHateSpeechResponse] = await to.default(detectHateSpeech(finalText));
+      if (err) {
+        console.error("Error:", err.message);
+      }
+    }
+    else {
+      console.debug("Empty text after preprocessing, original text = ", content);
+      err = new Error("Empty text");
+    }
+
+    const elapsedTime = performance.now() - startTime;
+    const defaultResult = {
+      identity_attack: 0.0,
+      insult: 0.0,
+      obscene: 0.0,
+      severe_toxicity: 0.0,
+      sexual_explicit: 0.0,
+      threat: 0.0,
+      toxicity: 0.0
+    };
+    const detectedHateSpeech = (!err) ? detectedHateSpeechResponse.data : defaultResult;
+
+    const evalHateSpeechDetection = (detectedHateSpeech, thresold = 0.2) => {
+      // If there are value in certain category with score larger than threshold then we conclude there is probably hate speech in the content
+      return Object.values(detectedHateSpeech)
+        .map(score => parseFloat(score))
+        .filter(score => score >= thresold)
+        .length > 0;
+    };
+
+    const maxScoreHateSpeechDetection =  Math.max(...Object.values(detectedHateSpeech)
+    .map(score => parseFloat(score)));
+    let sumScoreHateSpeechDetection = Object.values(detectedHateSpeech)
+      .map(score => parseFloat(score))
+      .reduce((a, b) => a + b, 0)
+    sumScoreHateSpeechDetection = (sumScoreHateSpeechDetection >= 1) ? 0.99999999999:sumScoreHateSpeechDetection;
+
+    const hateSpeechThresoldCheck = 0.2;
+    // Only publish and process event with minimum probaility score greater than or equal to hateSpeechThresoldCheck
+    const isProbablyHateSpeechContent = evalHateSpeechDetection(detectedHateSpeech, hateSpeechThresoldCheck);
+    if (isProbablyHateSpeechContent) {
+      // console.debug("====================================");
+      // console.debug("Event id:", id);
+      // console.debug("Author id:", author);
+      // console.debug("Content:", content);
+      // console.debug("Final Text:", finalText);
+      // console.debug("Max score:", maxScoreHateSpeechDetection);
+      // console.debug("Sum score:", sumScoreHateSpeechDetection);
+      console.debug("detectedHateSpeech", id, JSON.stringify(detectedHateSpeech), elapsedTime);
+
+      if (NODE_ENV !== 'production') {
+        fs.appendFile('classification_probably_hate_speech.txt', JSON.stringify({
+          id:id,
+          author:author,
+          content:content,
+          finalText:finalText,
+          data:detectedHateSpeech
+        }) + "\n");
+      }
+
+      const hateSpeechClassificationEvent = createHateSpeechClassificationEvent(detectedHateSpeech, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+      // console.debug(hateSpeechClassificationEvent);
+  
+      // Publish hateSpeechClassificationEvent
+      await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
+  
+      mqttClient.forEach((client) => {
+        if (ENABLE_MQTT_PUBLISH) {
+          client.publishAsync('nostr-hate-speech-classification', JSON.stringify(hateSpeechClassificationEvent)).then(() => {
+            console.log(client.options.host, "nostr-hate-speech-classification", "Published");
+          });
+        }
+      });
+    }
+
   }
 
   // Broadcast nostr note events to target relay after classification with some delay
