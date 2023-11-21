@@ -310,15 +310,25 @@ const createHateSpeechClassificationEvent = (detectedHateSpeech, privateKey, tag
 const publishNostrEvent = async (pool, relaysToPublish, event) => {
   try {
     let pubs = pool.publish(relaysToPublish, event);
-    // Ignore errors that happens when publishing
-    await Promise.allSettled(pubs);
-    console.debug("Event published ", event.id);
+    const joinResult = await Promise.all(pubs);
+    console.debug("Event published", event.id);
+    return true;
   } catch (error) {
-    console.error(error);
+    if (error === undefined) {
+      console.error("Error publishing", "undefined error");
+      return false;
+    }
+    if (error.message.trim() === "") {
+      console.error("Error publishing", "empty message error");
+      return true;
+    }
+    console.error("Error publishing", error.message);
+    return false;
   }
 };
 
 const handleNotesEvent = async (relay, sub_id, ev) => {
+  const event = ev;
   const id = ev.id;
   const author = ev.pubkey;
   const kind = parseInt(ev.kind) || 0;
@@ -378,7 +388,11 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       metadata.id, metadata.author, created_at);
 
     // Publish classification event
-    await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+    if (!publishEventResult) {
+      console.info("Fail to publish nsfwClassificationEvent event, try again for the last time");
+      await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+    }
 
     if (NODE_ENV !== 'production') fs.appendFile('classification.txt', JSON.stringify(nsfwClassificationData) + "\n");
 
@@ -480,7 +494,11 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     // console.debug(languageClassificationEvent);
 
     // Publish languageClassificationEvent
-    await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent);
+    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent);
+    if (!publishEventResult) {
+      console.info("Fail to publish languageClassificationEvent event, try again for the last time");
+      await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent);
+    }
 
     mqttClient.forEach((client) => {
       if (ENABLE_MQTT_PUBLISH) {
@@ -607,7 +625,11 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       // console.debug(hateSpeechClassificationEvent);
   
       // Publish hateSpeechClassificationEvent
-      await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
+      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
+      if (!publishEventResult) {
+        console.info("Fail to publish hateSpeechClassificationEvent event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
+      }
   
       mqttClient.forEach((client) => {
         if (ENABLE_MQTT_PUBLISH) {
@@ -622,7 +644,11 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
   // Broadcast nostr note events to target relay after classification with some delay
   setTimeout(async () => {
-    await publishNostrEvent(pool, relaysToPublish, ev);
+    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, event);
+    if (!publishEventResult) {
+      console.info("Fail to publish note event, try again for the last time");
+      await publishNostrEvent(pool, relaysToPublish, event);
+    }
   }, DELAYS_BEFORE_PUBLISHING_NOTES);
 };
 
