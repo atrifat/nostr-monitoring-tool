@@ -1,11 +1,11 @@
 export const extractHashtags = (tags) => {
-  return tags.filter(tag => tag[0] === "t").map(tag => tag[1]);
+  return tags.filter(tag => String(tag[0]) === "t").map(tag => String(tag[1]));
 }
 
 export const isActivityPubUser = (tags) => {
   for (let index = 0; index < tags.length; index++) {
     const tag = tags[index];
-    if (tag.length === 3 && tag[0] === "proxy" && tag[2] === "activitypub") {
+    if (tag.length === 3 && String(tag[0]) === "proxy" && String(tag[2]) === "activitypub") {
       return true;
     }
   }
@@ -15,7 +15,7 @@ export const isActivityPubUser = (tags) => {
 export const isRootPost = (tags) => {
   for (let index = 0; index < tags.length; index++) {
     const tag = tags[index];
-    if (tag[0] === "e") {
+    if (String(tag[0]) === "e") {
       return false;
     }
   }
@@ -25,7 +25,7 @@ export const isRootPost = (tags) => {
 export const hasContentWarning = (tags) => {
   for (let index = 0; index < tags.length; index++) {
     const tag = tags[index];
-    if (tag[0] === "content-warning") {
+    if (String(tag[0]) === "content-warning") {
       return true;
     }
   }
@@ -34,7 +34,7 @@ export const hasContentWarning = (tags) => {
 
 export const hasNsfwHashtag = (hashtags) => {
   for (let index = 0; index < hashtags.length; index++) {
-    const tag = hashtags[index].toLowerCase();
+    const tag = String(hashtags[index]).toLowerCase();
     if (tag === "nsfw") {
       return true;
     }
