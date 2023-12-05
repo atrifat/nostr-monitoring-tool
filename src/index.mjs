@@ -721,6 +721,25 @@ const handleNostrEvent = async (relay, sub_id, ev) => {
   }
 };
 
+// Interval subscription helper to keep alive connections.
+// Some relays will disconnect clients if there is no request or left as idle from the client.
+const intervalSubscriptionToKeepAliveConnection = setInterval(() => {
+  // Ensure that relayPool is initialized
+  if (!relayPool) return;
+
+  const intervalSubscriptionId = uuidv4().substring(0, 4);
+
+  relayPool.subscribe(intervalSubscriptionId, {
+    kinds: [1],
+    limit: 10
+  });
+
+  // Unsubscribe after few seconds
+  setTimeout(() => {
+    relayPool.unsubscribe(intervalSubscriptionId);
+  }, 5 * 1000);
+}, 25 * 1000);
+
 async function runRelayPool() {
   if (isInRelayPollFunction) return;
   isInRelayPollFunction = true;
