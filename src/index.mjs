@@ -27,7 +27,7 @@ import { v4 as uuidv4 } from 'uuid';
 import pLimit from 'p-limit';
 import { exit } from "node:process";
 import { TokenizerEn, NormalizerEn } from "@nlpjs/lang-en";
-import { 
+import {
   MentionNostrEntityRegex,
   unnecessaryCharRegex,
   fullUnnecessaryCharRegex,
@@ -154,7 +154,7 @@ const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedI
     id: "",
     pubkey: getPublicKey(privateKey),
     kind: 9978,
-    created_at: (createdAt !== undefined) ? createdAt:Math.floor(Date.now() / 1000),
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
     tags: [
       ["d", "nostr-language-classification"],
       ["t", "nostr-language-classification"],
@@ -245,7 +245,7 @@ const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, tagge
     id: "",
     pubkey: getPublicKey(privateKey),
     kind: 9978,
-    created_at: (createdAt !== undefined) ? createdAt: Math.floor(Date.now() / 1000),
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
     tags: [
       ["d", "nostr-nsfw-classification"],
       ["t", "nostr-nsfw-classification"],
@@ -288,7 +288,7 @@ const createHateSpeechClassificationEvent = (detectedHateSpeech, privateKey, tag
     id: "",
     pubkey: getPublicKey(privateKey),
     kind: 9978,
-    created_at: (createdAt !== undefined) ? createdAt:Math.floor(Date.now() / 1000),
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
     tags: [
       ["d", "nostr-hate-speech-classification"],
       ["t", "nostr-hate-speech-classification"],
@@ -476,7 +476,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       if (languageData.confidence >= 50 && languageData.language === 'en') {
         isEnglish = true;
         break;
-      } 
+      }
     }
 
     // console.debug(text);
@@ -545,7 +545,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
     // Remove unicode emojis (disabled by default, since emoji is important in sentiment analysis and hate speech detection)
     // text = text.replace(commonEmojiRegex, ' ');
-    
+
     // Preprocess to remove full unnecessary characters (including single quote or double quote)
     text = text.replace(fullUnnecessaryCharRegex, '');
 
@@ -591,12 +591,12 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
         .length > 0;
     };
 
-    const maxScoreHateSpeechDetection =  Math.max(...Object.values(detectedHateSpeech)
-    .map(score => parseFloat(score)));
+    const maxScoreHateSpeechDetection = Math.max(...Object.values(detectedHateSpeech)
+      .map(score => parseFloat(score)));
     let sumScoreHateSpeechDetection = Object.values(detectedHateSpeech)
       .map(score => parseFloat(score))
       .reduce((a, b) => a + b, 0)
-    sumScoreHateSpeechDetection = (sumScoreHateSpeechDetection >= 1) ? 0.99999999999:sumScoreHateSpeechDetection;
+    sumScoreHateSpeechDetection = (sumScoreHateSpeechDetection >= 1) ? 0.99999999999 : sumScoreHateSpeechDetection;
 
     const hateSpeechThresoldCheck = 0.2;
     // Only publish and process event with minimum probaility score greater than or equal to hateSpeechThresoldCheck
@@ -613,24 +613,24 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
       if (NODE_ENV !== 'production') {
         fs.appendFile('classification_probably_hate_speech.txt', JSON.stringify({
-          id:id,
-          author:author,
-          content:content,
-          finalText:finalText,
-          data:detectedHateSpeech
+          id: id,
+          author: author,
+          content: content,
+          finalText: finalText,
+          data: detectedHateSpeech
         }) + "\n");
       }
 
       const hateSpeechClassificationEvent = createHateSpeechClassificationEvent(detectedHateSpeech, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
       // console.debug(hateSpeechClassificationEvent);
-  
+
       // Publish hateSpeechClassificationEvent
       const publishEventResult = await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
       if (!publishEventResult) {
         console.info("Fail to publish hateSpeechClassificationEvent event, try again for the last time");
         await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
       }
-  
+
       mqttClient.forEach((client) => {
         if (ENABLE_MQTT_PUBLISH) {
           client.publishAsync('nostr-hate-speech-classification', JSON.stringify(hateSpeechClassificationEvent)).then(() => {
@@ -721,6 +721,25 @@ const handleNostrEvent = async (relay, sub_id, ev) => {
   }
 };
 
+// Interval subscription helper to keep alive connections.
+// Some relays will disconnect clients if there is no request or left as idle from the client.
+const intervalSubscriptionToKeepAliveConnection = setInterval(() => {
+  // Ensure that relayPool is initialized
+  if (!relayPool) return;
+
+  const intervalSubscriptionId = uuidv4().substring(0, 4);
+
+  relayPool.subscribe(intervalSubscriptionId, {
+    kinds: [1],
+    limit: 10
+  });
+
+  // Unsubscribe after few seconds
+  setTimeout(() => {
+    relayPool.unsubscribe(intervalSubscriptionId);
+  }, 5 * 1000);
+}, 25 * 1000);
+
 async function runRelayPool() {
   if (isInRelayPollFunction) return;
   isInRelayPollFunction = true;
@@ -731,13 +750,13 @@ async function runRelayPool() {
 
   relayPool = RelayPool(Array.from(relays), { reconnect: true });
 
-  const subIdForNotes = uuidv4().substring(0, 4);
-
   relayPool.on('open', relay => {
+    const subIdForNotes = uuidv4().substring(0, 4);
+
     relay.subscribe(subIdForNotes,
       {
         kinds: [1],
-        limit: 1
+        limit: 50
       }
     );
   });
