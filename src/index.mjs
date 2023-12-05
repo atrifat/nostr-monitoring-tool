@@ -731,13 +731,13 @@ async function runRelayPool() {
 
   relayPool = RelayPool(Array.from(relays), { reconnect: true });
 
-  const subIdForNotes = uuidv4().substring(0, 4);
-
   relayPool.on('open', relay => {
+    const subIdForNotes = uuidv4().substring(0, 4);
+
     relay.subscribe(subIdForNotes,
       {
         kinds: [1],
-        limit: 1
+        limit: 50
       }
     );
   });
