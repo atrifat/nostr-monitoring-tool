@@ -1,13 +1,13 @@
 # nostr-monitoring-tool
 
-A simple monitoring tool that classify nostr events (SFW/NSFW, language, topic, sentiment, toxic comment, etc). Currently, this is still a PoC (Proof of Concept) with alpha quality which code can be **changed** drastically.
+A simple monitoring tool that classify nostr events (SFW/NSFW, language, topic, sentiment, toxic comment, etc). A core module of [atrifat/nostr-filter-relay](https://github.com/atrifat/nostr-filter-relay). Currently, this is still a PoC (Proof of Concept) with alpha quality which code can be **changed** drastically.
 
 ## Features
 
 It will classify note events (kind: 1) content in various category such as:
 
 - [x] NSFW/SFW content detection using [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api)
-- [x] Language detection using [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
+- [x] Language detection using [atrifat/language-detector-api](https://github.com/atrifat/language-detector-api) or [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
 - [x] Hate speech (Toxic comment) detection using [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api)
 - [ ] (WIP) Sentiment analysis
 - [ ] (Planned) Topic classification
@@ -15,7 +15,7 @@ It will classify note events (kind: 1) content in various category such as:
 ## Requirements
 
 - Personal instance of [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api) (if ENABLE_NSFW_CLASSIFICATION == true)
-- Personal instance of [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) (if ENABLE_LANGUAGE_DETECTION == true)
+- Personal instance of [atrifat/language-detector-api](https://github.com/atrifat/language-detector-api) or [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) (if ENABLE_LANGUAGE_DETECTION == true)
 - Personal instance of [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api) (if ENABLE_HATE_SPEECH_DETECTION == true)
 
 ## Getting Started
@@ -33,7 +33,7 @@ install its dependencies
 npm install
 ```
 
-Before running this tool, make sure you have already run your own [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api), [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate), and [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api) instance since it is required for content classification. You don't have to run all of them only if you enable classification for certain task (Example: NSFW detection only).
+Before running this tool, make sure you have already run your own [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api), [atrifat/language-detector-api](https://github.com/atrifat/language-detector-api) or [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate), and [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api) instance since it is required for content classification. You don't have to run all of them only if you enable classification for certain task (Example: NSFW detection only).
 
 Copy `.env.example` into `.env` and change `.env` value properly
 
