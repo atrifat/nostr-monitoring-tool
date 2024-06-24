@@ -141,7 +141,7 @@ let relays = RELAYS_SOURCE;
 let relaysToPublish = RELAYS_TO_PUBLISH;
 
 function axiosRetryStrategy(result, error, attempts) {
-  return !!error && attempts < 2 ? attempts * 250 : -1;
+  return !!error && attempts < 2 ? attempts * 1000 : -1;
 }
 
 const detectLanguagePromiseGenerator = function (text) {
