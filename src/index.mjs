@@ -92,6 +92,20 @@ if (ENABLE_MQTT_PUBLISH === true && MQTT_BROKER_TO_PUBLISH.length === 0) {
   handleFatalError(new Error("MQTT_BROKER_TO_PUBLISH is required when ENABLE_MQTT_PUBLISH == true"));
 }
 
+// Additional image url regular expression pattern to be used for image classification requests. 
+// User can add environment variable like this: IMAGE_URL_PATTERN_0=hostname1.tld IMAGE_URL_PATTERN_1=hostname2.tld IMAGE_URL_PATTERN_2=or_any_pattern
+const IMAGE_URL_PATTERN_LIST = Object.keys(process.env)
+  .filter(key => key.startsWith('IMAGE_URL_PATTERN_'))
+  .map(key => {
+    const pattern = process.env[key];
+    const match = pattern.match(/^\/(.+)\/([gimy]*)$/);
+    if (!match) {
+      return new RegExp(pattern);
+    } else {
+      return new RegExp(match[1], match[2]);
+    }
+  });
+
 // Override log and debug functions for production environment. Use console.info, console.warn, console.error instead if needed.
 if (NODE_ENV === "production") {
   console.log = (...data) => {
@@ -362,7 +376,17 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
   console.debug('_hasNsfwHashtag = ', _hasNsfwHashtag);
   console.debug('Extracted url = ', extractedUrl.join(', '));
   // Extract only image url
-  const imgUrl = extractedUrl.filter((url) => getUrlType(url) === 'image') ?? [];
+  const imgUrl = extractedUrl.filter((url) => {
+    let match = false;
+    for (const filter of IMAGE_URL_PATTERN_LIST) {
+      if (filter.test(url)) {
+        // console.debug(url, "match", filter)
+        match = true;
+        break;
+      }
+    }
+    return match || getUrlType(url) === 'image';
+  }) ?? [];
   console.debug('Img url = ', imgUrl.join(', '));
 
   // NSFW classification event processing
