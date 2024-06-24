@@ -141,7 +141,7 @@ let relays = RELAYS_SOURCE;
 let relaysToPublish = RELAYS_TO_PUBLISH;
 
 function axiosRetryStrategy(result, error, attempts) {
-  return !!error && attempts < 2 ? attempts * 250 : -1;
+  return !!error && attempts < 2 ? attempts * 1000 : -1;
 }
 
 const detectLanguagePromiseGenerator = function (text) {
@@ -412,10 +412,12 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       metadata.id, metadata.author, created_at);
 
     // Publish classification event
-    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
-    if (!publishEventResult) {
-      console.info("Fail to publish nsfwClassificationEvent event, try again for the last time");
-      await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+    if (nsfwClassificationData.length > 0) {
+      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+      if (!publishEventResult) {
+        console.info("Fail to publish nsfwClassificationEvent event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+      }
     }
 
     if (NODE_ENV !== 'production') fs.appendFile('classification.txt', JSON.stringify(nsfwClassificationData) + "\n");
