@@ -201,8 +201,8 @@ const classifyUrlNsfwDetectorPromiseGenerator = function (url) {
   }), axiosRetryStrategy));
 };
 
-const classifyUrlNsfwDetector = async (imgUrl, metadata) => {
-  const classifyUrlNsfwDetectorList = imgUrl.map((url) => classifyUrlNsfwDetectorPromiseGenerator(url));
+const classifyUrlNsfwDetector = async (mediaUrl, metadata) => {
+  const classifyUrlNsfwDetectorList = mediaUrl.map((url) => classifyUrlNsfwDetectorPromiseGenerator(url));
   const rawOutput = await Promise.allSettled(classifyUrlNsfwDetectorList);
 
   const classificationOutput = rawOutput.map((item) => {
@@ -231,8 +231,8 @@ const classifyUrlNsfwDetector = async (imgUrl, metadata) => {
     return output;
   });
 
-  for (let index = 0; index < imgUrl.length; index++) {
-    const element = imgUrl[index];
+  for (let index = 0; index < mediaUrl.length; index++) {
+    const element = mediaUrl[index];
     classificationOutput[index].url = element;
   }
 
@@ -375,8 +375,8 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
   console.debug('_hasContentWarning = ', _hasContentWarning);
   console.debug('_hasNsfwHashtag = ', _hasNsfwHashtag);
   console.debug('Extracted url = ', extractedUrl.join(', '));
-  // Extract only image url
-  const imgUrl = extractedUrl.filter((url) => {
+  // Extract only image/video url
+  const mediaUrl = extractedUrl.filter((url) => {
     let match = false;
     for (const filter of IMAGE_URL_PATTERN_LIST) {
       if (filter.test(url)) {
@@ -385,12 +385,12 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
         break;
       }
     }
-    return match || getUrlType(url) === 'image';
+    return match || getUrlType(url) === 'image' || getUrlType(url) === 'video';
   }) ?? [];
-  console.debug('Img url = ', imgUrl.join(', '));
+  console.debug('Img/video url = ', mediaUrl.join(', '));
 
   // NSFW classification event processing
-  if (ENABLE_NSFW_CLASSIFICATION && imgUrl.length > 0) {
+  if (ENABLE_NSFW_CLASSIFICATION && mediaUrl.length > 0) {
     let metadata = {};
     metadata.id = id;
     metadata.author = author;
@@ -398,7 +398,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     metadata.has_nsfw_hashtag = _hasNsfwHashtag;
     metadata.is_activitypub_user = _isActivityPubUser;
 
-    const nsfwClassificationData = await classifyUrlNsfwDetector(imgUrl, metadata);
+    const nsfwClassificationData = await classifyUrlNsfwDetector(mediaUrl, metadata);
 
     const _isProbablyNSFW = isProbablyNSFWContent(nsfwClassificationData);
     // Mark as reponsible nsfw content if it has content warning or nsfw hashtag
