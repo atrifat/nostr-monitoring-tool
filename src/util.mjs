@@ -25,7 +25,7 @@ export const getUrlType = function (path) {
     n == ".gif" ||
     n == ".webp") {
     return "image";
-  } else if (n == ".mp4" || n == ".mov" || n == ".wmv" || n == ".m3u8") {
+  } else if (n == ".mp4" || n == ".mov" || n == ".wmv" || n == ".webm" || n == ".avi") {
     return "video";
   } else {
     return "link";
