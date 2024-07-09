@@ -341,6 +341,55 @@ const publishNostrEvent = async (pool, relaysToPublish, event) => {
   }
 };
 
+const preprocessText = async (inputText) => {
+  let text;
+
+  // Preprocess to replace any NIP-19 mentions (nostr:npub1, nevent1, note1, etc.)
+  const extractedUrl = extractUrl(inputText + " ") ?? [];
+  text = inputText.replace(MentionNostrEntityRegex, ' ');
+
+  // Preprocess to remove links
+  for (let index = 0; index < extractedUrl.length; index++) {
+    const url = extractedUrl[index];
+    text = text.replaceAll(url, ' ');
+  }
+
+  // Preprocess to remove ordinal pattern such as: 2nd, 3rd, etc.
+  text = text.replace(ordinalPatternRegex, '');
+
+  text = reduceRepeatingCharacters(text);
+  text = separateCamelCaseWordsHashtag(text);
+  text = normalizedNonGoodWordsPattern(text);
+
+  // Transform zap/zapathon into "tip" to reduce false positive
+  text = text.replace(zapPatternRegex, 'tip');
+
+  // Preprocess to remove hex string characters
+  text = text.replace(hexStringRegex, ' ');
+
+  // Preprocess to remove unnecessary characters (excluding single quote or double quote)
+  text = text.replace(unnecessaryCharRegex, ' ');
+
+  text = stringTokenizer.tokenize(text).join(' ');
+  text = stringNormalizer.normalize(text);
+
+  // Remove unicode emojis (disabled by default, since emoji is important in sentiment analysis and hate speech detection)
+  // text = text.replace(commonEmojiRegex, ' ');
+
+  // Preprocess to remove full unnecessary characters (including single quote or double quote)
+  text = text.replace(fullUnnecessaryCharRegex, '');
+
+  // Replace multiple newline character into single space character
+  text = text.replace(/\n+/gm, ' ');
+
+  // Replace multiple spaces character into single space character
+  text = text.replace(/\s+/gm, ' ');
+
+  text = text.trim().toLowerCase();
+
+  return text;
+}
+
 const handleNotesEvent = async (relay, sub_id, ev) => {
   const event = ev;
   const id = ev.id;
@@ -362,7 +411,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
   const _hasContentWarning = hasContentWarning(tags);
   const _hasNsfwHashtag = hasNsfwHashtag(hashtags);
   const _isActivityPubUser = isActivityPubUser(tags);
-  const extractedUrl = extractUrl(content) ?? [];
+  const extractedUrl = extractUrl(content + ' ') ?? [];
 
   console.debug('======================================');
   console.debug('relay = ', relay.url);
@@ -449,27 +498,22 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
   }
 
+  // Text Preprocessing for Classification
+  let processedText = await preprocessText(content);
+
+  // Detext empty text
+  const isEmptyText = content.replace(/(\n|\s)+/gm, '').trim() === '' && extractedUrl.length === 0;
+
   // Language detection event processing
   let isEnglish = false;
-  if (ENABLE_LANGUAGE_DETECTION) {
+  if (ENABLE_LANGUAGE_DETECTION && !isEmptyText) {
     const startTime = performance.now();
     let err, detectedLanguageResponse;
-    let text = content;
+    let text = processedText;
     const preprocessStartTime = performance.now();
-    // Preprocess to replace any NIP-19 mentions (nostr:npub1, nevent1, note1, etc.)
-    text = text.replace(MentionNostrEntityRegex, ' ');
-
-    // Preprocess to remove links
-    for (let index = 0; index < extractedUrl.length; index++) {
-      const url = extractedUrl[index];
-      text = text.replaceAll(url, ' ');
-    }
-
-    // Preprocess to remove unnecessary characters
-    text = text.replace(fullUnnecessaryCharRegex, ' ');
 
     // Remove unicode emojis
-    text = text.replace(commonEmojiRegex, ' ');
+    text = text.replace(commonEmojiRegex, '');
 
     // Replace multiple spaces character into single space character
     text = text.replace(/\s+/g, ' ').trim();
@@ -507,17 +551,8 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
     // console.debug(text);
     console.debug("detectedLanguage", JSON.stringify(detectedLanguage), elapsedTime);
-    // console.debug(preprocessElapsedTime);
-    // console.debug(elapsedTime);
-    // if (elapsedTime > 300) {
-    //   console.debug(text);
-    //   console.debug(detectedLanguage);
-    //   console.debug(preprocessElapsedTime);
-    //   console.debug(elapsedTime);
-    // }
 
     const languageClassificationEvent = createLanguageClassificationEvent(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
-    // console.debug(languageClassificationEvent);
 
     // Publish languageClassificationEvent
     const publishEventResult = await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent);
@@ -536,47 +571,11 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
   }
 
   // Hate speech detection event processing
-  if (ENABLE_HATE_SPEECH_DETECTION && isEnglish) {
+  if (ENABLE_HATE_SPEECH_DETECTION && isEnglish && !isEmptyText) {
     const startTime = performance.now();
     let err, detectedHateSpeechResponse;
-    let text = content;
+    let text = processedText;
     const preprocessStartTime = performance.now();
-    // Preprocess to replace any NIP-19 mentions (nostr:npub1, nevent1, note1, etc.)
-    text = text.replace(MentionNostrEntityRegex, ' ');
-
-    // Preprocess to remove links
-    for (let index = 0; index < extractedUrl.length; index++) {
-      const url = extractedUrl[index];
-      text = text.replaceAll(url, ' ');
-    }
-
-    // Preprocess to remove ordinal pattern such as: 2nd, 3rd, etc.
-    text = text.replace(ordinalPatternRegex, '');
-
-    text = reduceRepeatingCharacters(text);
-    text = separateCamelCaseWordsHashtag(text);
-    text = normalizedNonGoodWordsPattern(text);
-
-    // Transform zap/zapathon into "tip" to reduce false positive
-    text = text.replace(zapPatternRegex, 'tip');
-
-    // Preprocess to remove hex string characters
-    text = text.replace(hexStringRegex, ' ');
-
-    // Preprocess to remove unnecessary characters (excluding single quote or double quote)
-    text = text.replace(unnecessaryCharRegex, ' ');
-
-    text = stringTokenizer.tokenize(text).join(' ');
-    text = stringNormalizer.normalize(text);
-
-    // Remove unicode emojis (disabled by default, since emoji is important in sentiment analysis and hate speech detection)
-    // text = text.replace(commonEmojiRegex, ' ');
-
-    // Preprocess to remove full unnecessary characters (including single quote or double quote)
-    text = text.replace(fullUnnecessaryCharRegex, '');
-
-    // Replace multiple spaces character into single space character
-    text = text.replace(/\s+/g, ' ').trim().toLowerCase();
 
     // Truncate text if needed
     if (HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH > 0) {
@@ -628,13 +627,6 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     // Only publish and process event with minimum probaility score greater than or equal to hateSpeechThresoldCheck
     const isProbablyHateSpeechContent = evalHateSpeechDetection(detectedHateSpeech, hateSpeechThresoldCheck);
     if (isProbablyHateSpeechContent) {
-      // console.debug("====================================");
-      // console.debug("Event id:", id);
-      // console.debug("Author id:", author);
-      // console.debug("Content:", content);
-      // console.debug("Final Text:", finalText);
-      // console.debug("Max score:", maxScoreHateSpeechDetection);
-      // console.debug("Sum score:", sumScoreHateSpeechDetection);
       console.debug("detectedHateSpeech", id, JSON.stringify(detectedHateSpeech), elapsedTime);
 
       if (NODE_ENV !== 'production') {
@@ -648,7 +640,6 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       }
 
       const hateSpeechClassificationEvent = createHateSpeechClassificationEvent(detectedHateSpeech, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
-      // console.debug(hateSpeechClassificationEvent);
 
       // Publish hateSpeechClassificationEvent
       const publishEventResult = await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
