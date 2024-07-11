@@ -1,6 +1,6 @@
 {
   "name": "nostr-monitoring-tool",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "A simple monitoring tool that classify nostr events (SFW/NSFW, language, topic, sentiment, etc).",
   "main": "src/index.mjs",
   "type": "module",
