@@ -1,6 +1,8 @@
 # nostr-monitoring-tool
 
-A simple monitoring tool that classify nostr events (SFW/NSFW, language, topic, sentiment, toxic comment, etc). A core module of [atrifat/nostr-filter-relay](https://github.com/atrifat/nostr-filter-relay). Currently, this is still a PoC (Proof of Concept) with alpha quality which code can be **changed** drastically.
+A simple monitoring tool that classify nostr events (SFW/NSFW, language, topic, sentiment, toxic comment, topic, etc).
+
+A core module of [atrifat/nostr-filter-relay](https://github.com/atrifat/nostr-filter-relay).
 
 ## Features
 
@@ -9,14 +11,15 @@ It will classify note events (kind: 1) content in various category such as:
 - [x] NSFW/SFW content detection using [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api)
 - [x] Language detection using [atrifat/language-detector-api](https://github.com/atrifat/language-detector-api) or [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
 - [x] Hate speech (Toxic comment) detection using [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api)
-- [ ] (WIP) Sentiment analysis
-- [ ] (Planned) Topic classification
+- [x] Sentiment analysis using [atrifat/sentiment-analysis-api](https://github.com/atrifat/sentiment-analysis-api)
+- [ ] (WIP) Topic classification
 
 ## Requirements
 
 - Personal instance of [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api) (if ENABLE_NSFW_CLASSIFICATION == true)
 - Personal instance of [atrifat/language-detector-api](https://github.com/atrifat/language-detector-api) or [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate) (if ENABLE_LANGUAGE_DETECTION == true)
 - Personal instance of [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api) (if ENABLE_HATE_SPEECH_DETECTION == true)
+- Personal instance of [atrifat/sentiment-analysis-api](https://github.com/atrifat/sentiment-analysis-api) (if ENABLE_SENTIMENT_ANALYSIS == true)
 
 ## Getting Started
 
@@ -33,7 +36,7 @@ install its dependencies
 npm install
 ```
 
-Before running this tool, make sure you have already run your own [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api), [atrifat/language-detector-api](https://github.com/atrifat/language-detector-api) or [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate), and [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api) instance since it is required for content classification. You don't have to run all of them only if you enable classification for certain task (Example: NSFW detection only).
+Before running this tool, make sure you have already run your own [atrifat/nsfw-detector-api](https://github.com/atrifat/nsfw-detector-api), [atrifat/language-detector-api](https://github.com/atrifat/language-detector-api) or [LibreTranslate](https://github.com/LibreTranslate/LibreTranslate), [atrifat/hate-speech-detector-api](https://github.com/atrifat/hate-speech-detector-api), and [atrifat/sentiment-analysis-api](https://github.com/atrifat/sentiment-analysis-api) instance since it is required for content classification. You don't have to run all of them only if you enable classification for certain task (Example: NSFW detection task only).
 
 Copy `.env.example` into `.env` and change `.env` value properly
 
@@ -54,10 +57,12 @@ node src/index.mjs
 ```
 
 This tool will classify note events and publish classification result as nostr event (kind: 9978).
+
 - For NSFW classification, it will publish classification event using **'d'** tag with **'nostr-nsfw-classification'**.
 - For language detection, it will publish classification event using **'d'** tag with **'nostr-language-classification'**.
 - For hate speech detection, it will publish classification event using **'d'** tag with **'nostr-hate-speech-classification'**.
-- Other classification tag (topic classification, sentiment analysis, etc.) will be defined later.
+- For sentiment analysis, it will publish classification event using **'d'** tag with **'nostr-sentiment-classification'**.
+- Other classification tag (topic classification, etc.) will be defined later.
 
 Classification events can be used in another tool such as [nostr-filter-relay](https://github.com/atrifat/nostr-filter-relay) to filter note events.
 
