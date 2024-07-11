@@ -62,6 +62,14 @@ if (Number.isNaN(HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH) || HATE_SPEECH_DETECTOR_T
   handleFatalError(new Error("Invalid HATE_SPEECH_DETECTOR_TRUNCATE_LENGTH"));
 }
 
+const ENABLE_SENTIMENT_ANALYSIS = process.env.ENABLE_SENTIMENT_ANALYSIS ? process.env.ENABLE_SENTIMENT_ANALYSIS === 'true' : false;
+const SENTIMENT_ANALYSIS_ENDPOINT = process.env.SENTIMENT_ANALYSIS_ENDPOINT || "";
+const SENTIMENT_ANALYSIS_TOKEN = process.env.SENTIMENT_ANALYSIS_TOKEN || "";
+const SENTIMENT_ANALYSIS_TRUNCATE_LENGTH = parseInt(process.env.SENTIMENT_ANALYSIS_TRUNCATE_LENGTH || "350");
+if (Number.isNaN(SENTIMENT_ANALYSIS_TRUNCATE_LENGTH) || SENTIMENT_ANALYSIS_TRUNCATE_LENGTH < 0) {
+  handleFatalError(new Error("Invalid SENTIMENT_ANALYSIS_TRUNCATE_LENGTH"));
+}
+
 const NOSTR_MONITORING_BOT_PRIVATE_KEY = process.env.NOSTR_MONITORING_BOT_PRIVATE_KEY || handleFatalError(new Error("NOSTR_MONITORING_BOT_PRIVATE_KEY is required"));
 const RELAYS_SOURCE =
   (typeof process.env.RELAYS_SOURCE !== "undefined" &&
@@ -319,6 +327,48 @@ const createHateSpeechClassificationEvent = (detectedHateSpeech, privateKey, tag
   let veryOk = verifySignature(hateSpeechClassificationEvent);
   if (!veryOk) return undefined;
   return hateSpeechClassificationEvent;
+};
+
+const detectSentimentPromiseGenerator = function (text) {
+  const reqHeaders = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+  return retry(() => axios({
+    url: SENTIMENT_ANALYSIS_ENDPOINT,
+    method: 'POST',
+    headers: reqHeaders,
+    data: { "q": text, "api_key": SENTIMENT_ANALYSIS_TOKEN }
+  }), axiosRetryStrategy);
+};
+
+const detectSentiment = async function (text) {
+  const result = await detectSentimentPromiseGenerator(text);
+  return result;
+}
+
+const createSentimentClassificationEvent = (detectedSentiment, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let sentimentClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 9978,
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
+    tags: [
+      ["d", "nostr-sentiment-classification"],
+      ["t", "nostr-sentiment-classification"],
+      ["e", taggedId],
+      ["p", taggedAuthor],
+    ],
+    content: JSON.stringify(detectedSentiment),
+    sig: ""
+  }
+  sentimentClassificationEvent.id = getEventHash(sentimentClassificationEvent);
+  sentimentClassificationEvent.sig = getSignature(sentimentClassificationEvent, privateKey);
+  let ok = validateEvent(sentimentClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(sentimentClassificationEvent);
+  if (!veryOk) return undefined;
+  return sentimentClassificationEvent;
 };
 
 const publishNostrEvent = async (pool, relaysToPublish, event) => {
@@ -667,6 +717,58 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       await publishNostrEvent(pool, relaysToPublish, event);
     }
   }, DELAYS_BEFORE_PUBLISHING_NOTES);
+
+  // Sentiment analysis event processing. This process will be executed after publishing notes.
+  if (ENABLE_SENTIMENT_ANALYSIS && isEnglish && !isEmptyText) {
+    let text = processedText;
+
+    // Truncate text if needed
+    if (SENTIMENT_ANALYSIS_TRUNCATE_LENGTH > 0) {
+      text = truncateString(text, SENTIMENT_ANALYSIS_TRUNCATE_LENGTH);
+    }
+
+    const finalText = text;
+    const startTime = performance.now();
+
+    let err, detectedSentimentResponse;
+    if (finalText !== '') {
+      [err, detectedSentimentResponse] = await to.default(detectSentiment(finalText));
+      if (err) {
+        console.error("Error:", err.message);
+      }
+    }
+    else {
+      console.debug("Empty text after preprocessing, original text = ", content);
+      err = new Error("Empty text");
+    }
+
+    const elapsedTime = performance.now() - startTime;
+
+    const defaultResult = {
+      negative: 0.0,
+      neutral: 0.0,
+      positive: 0.0,
+    };
+    const detectedSentiment = (!err) ? detectedSentimentResponse.data : defaultResult;
+    console.debug("detectedSentiment", id, JSON.stringify(detectedSentiment), elapsedTime);
+
+    const sentimentClassificationEvent = createSentimentClassificationEvent(detectedSentiment, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+
+    // Publish hateSpeechClassificationEvent
+    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
+    if (!publishEventResult) {
+      console.info("Fail to publish sentimentClassificationEvent event, try again for the last time");
+      await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
+    }
+
+    mqttClient.forEach((client) => {
+      if (ENABLE_MQTT_PUBLISH) {
+        client.publishAsync('nostr-sentiment-classification', JSON.stringify(sentimentClassificationEvent)).then(() => {
+          console.log(client.options.host, "nostr-sentiment-classification", "Published");
+        });
+      }
+    });
+  }
 };
 
 let eventCounter = {};
