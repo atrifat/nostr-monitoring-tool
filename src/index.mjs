@@ -429,6 +429,15 @@ const preprocessText = async (inputText) => {
   // Preprocess to remove full unnecessary characters (including single quote or double quote)
   text = text.replace(fullUnnecessaryCharRegex, '');
 
+  // Replace common greeting patten (good morning)
+  text = text.replace(/(^gm\s|\sgm|gm\s|\sgm$)/gm, 'good morning');
+
+  // Replace common greeting patten (good night)
+  text = text.replace(/(^gn\s|\sgn|gn\s|\sgn$)/gm, 'good night');
+
+  // Replace common greeting patten (pura vida)
+  text = text.replace(/(^pv\s|\spv|pv\s|\spv$)/gm, 'pura vida gratitude happy life');
+
   // Replace multiple newline character into single space character
   text = text.replace(/\n+/gm, ' ');
 
