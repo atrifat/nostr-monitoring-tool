@@ -70,6 +70,14 @@ if (Number.isNaN(SENTIMENT_ANALYSIS_TRUNCATE_LENGTH) || SENTIMENT_ANALYSIS_TRUNC
   handleFatalError(new Error("Invalid SENTIMENT_ANALYSIS_TRUNCATE_LENGTH"));
 }
 
+const ENABLE_TOPIC_CLASSIFICATION = process.env.ENABLE_TOPIC_CLASSIFICATION ? process.env.ENABLE_TOPIC_CLASSIFICATION === 'true' : false;
+const TOPIC_CLASSIFICATION_ENDPOINT = process.env.TOPIC_CLASSIFICATION_ENDPOINT || "";
+const TOPIC_CLASSIFICATION_TOKEN = process.env.TOPIC_CLASSIFICATION_TOKEN || "";
+const TOPIC_CLASSIFICATION_TRUNCATE_LENGTH = parseInt(process.env.TOPIC_CLASSIFICATION_TRUNCATE_LENGTH || "350");
+if (Number.isNaN(TOPIC_CLASSIFICATION_TRUNCATE_LENGTH) || TOPIC_CLASSIFICATION_TRUNCATE_LENGTH < 0) {
+  handleFatalError(new Error("Invalid TOPIC_CLASSIFICATION_TRUNCATE_LENGTH"));
+}
+
 const NOSTR_MONITORING_BOT_PRIVATE_KEY = process.env.NOSTR_MONITORING_BOT_PRIVATE_KEY || handleFatalError(new Error("NOSTR_MONITORING_BOT_PRIVATE_KEY is required"));
 const RELAYS_SOURCE =
   (typeof process.env.RELAYS_SOURCE !== "undefined" &&
@@ -369,6 +377,53 @@ const createSentimentClassificationEvent = (detectedSentiment, privateKey, tagge
   let veryOk = verifySignature(sentimentClassificationEvent);
   if (!veryOk) return undefined;
   return sentimentClassificationEvent;
+};
+
+const classifyTopicPromiseGenerator = function (text) {
+  const reqHeaders = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+  return retry(() => axios({
+    url: TOPIC_CLASSIFICATION_ENDPOINT,
+    method: 'POST',
+    headers: reqHeaders,
+    data: { "q": text, "api_key": TOPIC_CLASSIFICATION_TOKEN }
+  }), axiosRetryStrategy);
+};
+
+const classifyTopic = async function (text) {
+  try {
+    const rawResult = await classifyTopicPromiseGenerator(text);
+    let result = rawResult.data.map(item => { return { label: item.label.replace("&", "and"), score: item.score }; });
+    return { data: result };
+  } catch (error) {
+    throw error;
+  }
+}
+
+const createTopicClassificationEvent = (topicClassification, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let topicClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 9978,
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
+    tags: [
+      ["d", "nostr-topic-classification"],
+      ["t", "nostr-topic-classification"],
+      ["e", taggedId],
+      ["p", taggedAuthor],
+    ],
+    content: JSON.stringify(topicClassification),
+    sig: ""
+  }
+  topicClassificationEvent.id = getEventHash(topicClassificationEvent);
+  topicClassificationEvent.sig = getSignature(topicClassificationEvent, privateKey);
+  let ok = validateEvent(topicClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(topicClassificationEvent);
+  if (!veryOk) return undefined;
+  return topicClassificationEvent;
 };
 
 const publishNostrEvent = async (pool, relaysToPublish, event) => {
@@ -774,6 +829,54 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       if (ENABLE_MQTT_PUBLISH) {
         client.publishAsync('nostr-sentiment-classification', JSON.stringify(sentimentClassificationEvent)).then(() => {
           console.log(client.options.host, "nostr-sentiment-classification", "Published");
+        });
+      }
+    });
+  }
+
+  // Topic classification event processing. This process will be executed after publishing notes.
+  if (ENABLE_TOPIC_CLASSIFICATION && isEnglish && !isEmptyText) {
+    let text = processedText;
+
+    // Truncate text if needed
+    if (TOPIC_CLASSIFICATION_TRUNCATE_LENGTH > 0) {
+      text = truncateString(text, TOPIC_CLASSIFICATION_TRUNCATE_LENGTH);
+    }
+
+    const finalText = text;
+    const startTime = performance.now();
+
+    let err, topicClassificationResponse;
+    if (finalText !== '') {
+      [err, topicClassificationResponse] = await to.default(classifyTopic(finalText));
+      if (err) {
+        console.error("Error:", err.message);
+      }
+    }
+    else {
+      console.debug("Empty text after preprocessing, original text = ", content);
+      err = new Error("Empty text");
+    }
+
+    const elapsedTime = performance.now() - startTime;
+
+    const defaultResult = [];
+    const topicClassificationData = (!err) ? topicClassificationResponse.data : defaultResult;
+    console.debug("topicClassificationData", id, JSON.stringify(topicClassificationData), elapsedTime);
+
+    const topicClassificationEvent = createTopicClassificationEvent(topicClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+
+    // Publish topicClassificationEvent
+    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
+    if (!publishEventResult) {
+      console.info("Fail to publish topicClassificationEvent event, try again for the last time");
+      await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
+    }
+
+    mqttClient.forEach((client) => {
+      if (ENABLE_MQTT_PUBLISH) {
+        client.publishAsync('nostr-topic-classification', JSON.stringify(topicClassificationEvent)).then(() => {
+          console.log(client.options.host, "nostr-topic-classification", "Published");
         });
       }
     });
