@@ -450,8 +450,10 @@ const preprocessText = async (inputText) => {
   let text;
 
   // Preprocess to replace any NIP-19 mentions (nostr:npub1, nevent1, note1, etc.)
-  const extractedUrl = extractUrl(inputText + " ") ?? [];
   text = inputText.replace(MentionNostrEntityRegex, ' ');
+
+  // Extract URL
+  const extractedUrl = [... new Set(extractUrl(inputText + ' ') ?? [])];
 
   // Preprocess to remove links
   for (let index = 0; index < extractedUrl.length; index++) {
@@ -525,7 +527,7 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
   const _hasContentWarning = hasContentWarning(tags);
   const _hasNsfwHashtag = hasNsfwHashtag(hashtags);
   const _isActivityPubUser = isActivityPubUser(tags);
-  const extractedUrl = extractUrl(content + ' ') ?? [];
+  const extractedUrl = [... new Set(extractUrl(content + ' ') ?? [])];
 
   console.debug('======================================');
   console.debug('relay = ', relay.url);
