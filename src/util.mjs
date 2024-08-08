@@ -66,5 +66,6 @@ export async function deleteFile(filePath) {
 export const nMinutesAgo = (n) => Math.floor((Date.now() - n * 60 * 1000) / 1000);
 
 export const truncateString = (text, n) => {
-  return (text.length > n) ? text.slice(0, n-1): text;
+  let chars = Array.from(String(text));
+  return (chars.length > n) ? chars.slice(0, n - 1).join('') : text;
 }
