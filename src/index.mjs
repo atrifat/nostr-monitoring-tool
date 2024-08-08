@@ -786,102 +786,106 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
 
   // Sentiment analysis event processing. This process will be executed after publishing notes.
   if (ENABLE_SENTIMENT_ANALYSIS && isEnglish && !isEmptyText) {
-    let text = processedText;
+    (async () => {
+      let text = processedText;
 
-    // Truncate text if needed
-    if (SENTIMENT_ANALYSIS_TRUNCATE_LENGTH > 0) {
-      text = truncateString(text, SENTIMENT_ANALYSIS_TRUNCATE_LENGTH);
-    }
-
-    const finalText = text;
-    const startTime = performance.now();
-
-    let err, detectedSentimentResponse;
-    if (finalText !== '') {
-      [err, detectedSentimentResponse] = await to.default(detectSentiment(finalText));
-      if (err) {
-        console.error("Error:", err.message);
+      // Truncate text if needed
+      if (SENTIMENT_ANALYSIS_TRUNCATE_LENGTH > 0) {
+        text = truncateString(text, SENTIMENT_ANALYSIS_TRUNCATE_LENGTH);
       }
-    }
-    else {
-      console.debug("Empty text after preprocessing, original text = ", content);
-      err = new Error("Empty text");
-    }
 
-    const elapsedTime = performance.now() - startTime;
+      const finalText = text;
+      const startTime = performance.now();
 
-    const defaultResult = {
-      negative: 0.0,
-      neutral: 0.0,
-      positive: 0.0,
-    };
-    const detectedSentiment = (!err) ? detectedSentimentResponse.data : defaultResult;
-    console.debug("detectedSentiment", id, JSON.stringify(detectedSentiment), elapsedTime);
-
-    const sentimentClassificationEvent = createSentimentClassificationEvent(detectedSentiment, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
-
-    // Publish hateSpeechClassificationEvent
-    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
-    if (!publishEventResult) {
-      console.info("Fail to publish sentimentClassificationEvent event, try again for the last time");
-      await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
-    }
-
-    mqttClient.forEach((client) => {
-      if (ENABLE_MQTT_PUBLISH) {
-        client.publishAsync('nostr-sentiment-classification', JSON.stringify(sentimentClassificationEvent)).then(() => {
-          console.log(client.options.host, "nostr-sentiment-classification", "Published");
-        });
+      let err, detectedSentimentResponse;
+      if (finalText !== '') {
+        [err, detectedSentimentResponse] = await to.default(detectSentiment(finalText));
+        if (err) {
+          console.error("Error:", err.message);
+        }
       }
-    });
+      else {
+        console.debug("Empty text after preprocessing, original text = ", content);
+        err = new Error("Empty text");
+      }
+
+      const elapsedTime = performance.now() - startTime;
+
+      const defaultResult = {
+        negative: 0.0,
+        neutral: 0.0,
+        positive: 0.0,
+      };
+      const detectedSentiment = (!err) ? detectedSentimentResponse.data : defaultResult;
+      console.debug("detectedSentiment", id, JSON.stringify(detectedSentiment), elapsedTime);
+
+      const sentimentClassificationEvent = createSentimentClassificationEvent(detectedSentiment, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+
+      // Publish hateSpeechClassificationEvent
+      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
+      if (!publishEventResult) {
+        console.info("Fail to publish sentimentClassificationEvent event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
+      }
+
+      mqttClient.forEach((client) => {
+        if (ENABLE_MQTT_PUBLISH) {
+          client.publishAsync('nostr-sentiment-classification', JSON.stringify(sentimentClassificationEvent)).then(() => {
+            console.log(client.options.host, "nostr-sentiment-classification", "Published");
+          });
+        }
+      });
+    })();
   }
 
   // Topic classification event processing. This process will be executed after publishing notes.
   if (ENABLE_TOPIC_CLASSIFICATION && isEnglish && !isEmptyText) {
-    let text = processedText;
+    (async () => {
+      let text = processedText;
 
-    // Truncate text if needed
-    if (TOPIC_CLASSIFICATION_TRUNCATE_LENGTH > 0) {
-      text = truncateString(text, TOPIC_CLASSIFICATION_TRUNCATE_LENGTH);
-    }
-
-    const finalText = text;
-    const startTime = performance.now();
-
-    let err, topicClassificationResponse;
-    if (finalText !== '') {
-      [err, topicClassificationResponse] = await to.default(classifyTopic(finalText));
-      if (err) {
-        console.error("Error:", err.message);
+      // Truncate text if needed
+      if (TOPIC_CLASSIFICATION_TRUNCATE_LENGTH > 0) {
+        text = truncateString(text, TOPIC_CLASSIFICATION_TRUNCATE_LENGTH);
       }
-    }
-    else {
-      console.debug("Empty text after preprocessing, original text = ", content);
-      err = new Error("Empty text");
-    }
 
-    const elapsedTime = performance.now() - startTime;
+      const finalText = text;
+      const startTime = performance.now();
 
-    const defaultResult = [];
-    const topicClassificationData = (!err) ? topicClassificationResponse.data : defaultResult;
-    console.debug("topicClassificationData", id, JSON.stringify(topicClassificationData), elapsedTime);
-
-    const topicClassificationEvent = createTopicClassificationEvent(topicClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
-
-    // Publish topicClassificationEvent
-    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
-    if (!publishEventResult) {
-      console.info("Fail to publish topicClassificationEvent event, try again for the last time");
-      await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
-    }
-
-    mqttClient.forEach((client) => {
-      if (ENABLE_MQTT_PUBLISH) {
-        client.publishAsync('nostr-topic-classification', JSON.stringify(topicClassificationEvent)).then(() => {
-          console.log(client.options.host, "nostr-topic-classification", "Published");
-        });
+      let err, topicClassificationResponse;
+      if (finalText !== '') {
+        [err, topicClassificationResponse] = await to.default(classifyTopic(finalText));
+        if (err) {
+          console.error("Error:", err.message);
+        }
       }
-    });
+      else {
+        console.debug("Empty text after preprocessing, original text = ", content);
+        err = new Error("Empty text");
+      }
+
+      const elapsedTime = performance.now() - startTime;
+
+      const defaultResult = [];
+      const topicClassificationData = (!err) ? topicClassificationResponse.data : defaultResult;
+      console.debug("topicClassificationData", id, JSON.stringify(topicClassificationData), elapsedTime);
+
+      const topicClassificationEvent = createTopicClassificationEvent(topicClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+
+      // Publish topicClassificationEvent
+      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
+      if (!publishEventResult) {
+        console.info("Fail to publish topicClassificationEvent event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
+      }
+
+      mqttClient.forEach((client) => {
+        if (ENABLE_MQTT_PUBLISH) {
+          client.publishAsync('nostr-topic-classification', JSON.stringify(topicClassificationEvent)).then(() => {
+            console.log(client.options.host, "nostr-topic-classification", "Published");
+          });
+        }
+      });
+    })();
   }
 };
 
