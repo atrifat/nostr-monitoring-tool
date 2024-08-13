@@ -182,6 +182,7 @@ const detectLanguage = async function (text) {
   return result;
 }
 
+// (Deprecated) This function will be removed and replaced with NIP-32 event generator. Consider to use NIP-32 Label event.
 const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedId, taggedAuthor, createdAt) => {
   let languageClassificationEvent = {
     id: "",
@@ -197,6 +198,56 @@ const createLanguageClassificationEvent = (detectedLanguage, privateKey, taggedI
     content: JSON.stringify(detectedLanguage),
     sig: ""
   }
+  languageClassificationEvent.id = getEventHash(languageClassificationEvent);
+  languageClassificationEvent.sig = getSignature(languageClassificationEvent, privateKey);
+  let ok = validateEvent(languageClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(languageClassificationEvent);
+  if (!veryOk) return undefined;
+  return languageClassificationEvent;
+};
+
+const createLanguageClassificationNip32Event = (detectedLanguage, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let labelNamespace = "app.nfrelay.language";
+  let labelISONamespace = "ISO-639-1";
+  let labelModelName = "atrifat/language-detector-api";
+  let labelModelUrl = "https://github.com/atrifat/language-detector-api";
+  let labelMinimumScore = 35;
+  let labelScoreType = "float";
+  let relaySource = "wss://nfrelay.app";
+
+  let languageClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 1985,
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
+    tags: [
+      ["e", taggedId, relaySource],
+      ["p", taggedAuthor],
+      ["L", labelISONamespace],
+      ["L", labelNamespace],
+      ["label_score_type", labelNamespace, labelScoreType],
+      ["label_model", labelNamespace, labelModelName, labelModelUrl],
+      ["label_minimum_score", labelNamespace, String(labelMinimumScore)],
+    ],
+    content: "",
+    sig: ""
+  };
+
+  for (const language of detectedLanguage) {
+    let languageLabel = language.language.split("-").at(0);
+    let languageScore = String(language.confidence);
+
+    // Ensure only ISO-639-1 language code
+    if (languageLabel.length > 2) continue;
+
+    if (language.confidence >= labelMinimumScore) {
+      languageClassificationEvent.tags.push(["l", languageLabel, labelISONamespace]);
+      languageClassificationEvent.tags.push(["l", languageLabel, labelNamespace]);
+    }
+    languageClassificationEvent.tags.push(["label_score", languageLabel, labelNamespace, languageScore]);
+  }
+
   languageClassificationEvent.id = getEventHash(languageClassificationEvent);
   languageClassificationEvent.sig = getSignature(languageClassificationEvent, privateKey);
   let ok = validateEvent(languageClassificationEvent);
@@ -737,12 +788,20 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     console.debug("detectedLanguage", JSON.stringify(detectedLanguage), elapsedTime);
 
     const languageClassificationEvent = createLanguageClassificationEvent(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+    const languageClassificationNip32Event = createLanguageClassificationNip32Event(detectedLanguage, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
 
     // Publish languageClassificationEvent
-    const publishEventResult = await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent);
+    const publishEventResult = (ENABLE_LEGACY_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent) : true;
     if (!publishEventResult) {
       console.info("Fail to publish languageClassificationEvent event, try again for the last time");
       await publishNostrEvent(pool, relaysToPublish, languageClassificationEvent);
+    }
+
+    // Publish languageClassificationNip32Event
+    const publishNip32EventResult = (ENABLE_NIP_32_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, languageClassificationNip32Event) : true;
+    if (!publishNip32EventResult) {
+      console.info("Fail to publish languageClassificationNip32Event event, try again for the last time");
+      await publishNostrEvent(pool, relaysToPublish, languageClassificationNip32Event);
     }
 
     mqttClient.forEach((client) => {
