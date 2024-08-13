@@ -43,6 +43,9 @@ import {
 // Load env variable from .env
 dotenv.config();
 const NODE_ENV = process.env.NODE_ENV || "production";
+const ENABLE_NIP_32_CLASSIFICATION_EVENT = process.env.ENABLE_NIP_32_CLASSIFICATION_EVENT ? process.env.ENABLE_NIP_32_CLASSIFICATION_EVENT === 'true' : true;
+const ENABLE_LEGACY_CLASSIFICATION_EVENT = process.env.ENABLE_LEGACY_CLASSIFICATION_EVENT ? process.env.ENABLE_LEGACY_CLASSIFICATION_EVENT === 'true' : true;
+
 const ENABLE_NSFW_CLASSIFICATION = process.env.ENABLE_NSFW_CLASSIFICATION ? process.env.ENABLE_NSFW_CLASSIFICATION === 'true' : false;
 const NSFW_DETECTOR_ENDPOINT = process.env.NSFW_DETECTOR_ENDPOINT || "";
 const NSFW_DETECTOR_TOKEN = process.env.NSFW_DETECTOR_TOKEN || "";
@@ -270,6 +273,7 @@ const classifyUrlNsfwDetector = async (mediaUrl, metadata) => {
   return classificationData;
 };
 
+// (Deprecated) This function will be removed and replaced with NIP-32 event generator. Consider to use NIP-32 Label event.
 const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, taggedId, taggedAuthor, createdAt) => {
   let nsfwClassificationEvent = {
     id: "",
@@ -285,6 +289,61 @@ const createNsfwClassificationEvent = (nsfwClassificationData, privateKey, tagge
     content: JSON.stringify(nsfwClassificationData),
     sig: ""
   }
+  nsfwClassificationEvent.id = getEventHash(nsfwClassificationEvent);
+  nsfwClassificationEvent.sig = getSignature(nsfwClassificationEvent, privateKey);
+  let ok = validateEvent(nsfwClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(nsfwClassificationEvent);
+  if (!veryOk) return undefined;
+  return nsfwClassificationEvent;
+};
+
+const createNsfwClassificationNip32Event = (nsfwClassificationData, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let labelNamespace = "app.nfrelay.content-safety";
+  let labelModelName = "atrifat/nsfw-detector-api";
+  let labelModelUrl = "https://github.com/atrifat/nsfw-detector-api";
+  let labelScoreType = "float";
+  let labelMinimumScore = 0.5;
+  let labelSchema = ["sfw", "nsfw"];
+  let labelSchemaOriginal = ["hentai", "neutral", "pornography", "sexy"];
+  let relaySource = "wss://nfrelay.app";
+
+  let nsfwClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 1985,
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
+    tags: [
+      ["e", taggedId, relaySource],
+      ["p", taggedAuthor],
+      ["L", labelNamespace],
+      ["label_score_type", labelNamespace, labelScoreType],
+      ["label_model", labelNamespace, labelModelName, labelModelUrl],
+      ["label_minimum_score", labelNamespace, String(labelMinimumScore)],
+      ["label_schema", labelNamespace].concat(labelSchema),
+      ["label_schema_original", labelNamespace].concat(labelSchemaOriginal),
+    ],
+    content: "",
+    sig: ""
+  }
+
+  for (const item of nsfwClassificationData) {
+    let rawClassificationData = item.data;
+    let sourceClassificationData = item.url;
+    let nsfwScore = 1.0 - item.data.neutral;
+    let sfwScore = item.data.neutral;
+    let label = (nsfwScore >= labelMinimumScore) ? "nsfw" : "sfw";
+    let score = (nsfwScore >= labelMinimumScore) ? nsfwScore : sfwScore;
+
+    nsfwClassificationEvent.tags.push(["l", label, labelNamespace]);
+    nsfwClassificationEvent.tags.push(["label_score", label, labelNamespace, String(score), sourceClassificationData]);
+    for (const labelOriginal of labelSchemaOriginal) {
+      if (rawClassificationData.hasOwnProperty(labelOriginal)) {
+        nsfwClassificationEvent.tags.push(["label_score", labelOriginal, labelNamespace, String(rawClassificationData[labelOriginal]), sourceClassificationData]);
+      }
+    }
+  }
+
   nsfwClassificationEvent.id = getEventHash(nsfwClassificationEvent);
   nsfwClassificationEvent.sig = getSignature(nsfwClassificationEvent, privateKey);
   let ok = validateEvent(nsfwClassificationEvent);
@@ -576,12 +635,21 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
     const nsfwClassificationEvent = createNsfwClassificationEvent(nsfwClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY,
       metadata.id, metadata.author, created_at);
 
+    const nsfwClassificationNip32Event = createNsfwClassificationNip32Event(nsfwClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY,
+      metadata.id, metadata.author, created_at);
+
     // Publish classification event
     if (nsfwClassificationData.length > 0) {
-      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+      const publishEventResult = (ENABLE_LEGACY_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent) : true;
       if (!publishEventResult) {
         console.info("Fail to publish nsfwClassificationEvent event, try again for the last time");
         await publishNostrEvent(pool, relaysToPublish, nsfwClassificationEvent);
+      }
+
+      const publishNip32EventResult = (ENABLE_NIP_32_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, nsfwClassificationNip32Event) : true;
+      if (!publishNip32EventResult) {
+        console.info("Fail to publish nsfwClassificationNip32Event event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, nsfwClassificationNip32Event);
       }
     }
 
