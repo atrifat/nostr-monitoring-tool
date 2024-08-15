@@ -423,6 +423,7 @@ const detectHateSpeech = async function (text) {
   return result;
 }
 
+// (Deprecated) This function will be removed and replaced with NIP-32 event generator. Consider to use NIP-32 Label event.
 const createHateSpeechClassificationEvent = (detectedHateSpeech, privateKey, taggedId, taggedAuthor, createdAt) => {
   let hateSpeechClassificationEvent = {
     id: "",
@@ -438,6 +439,61 @@ const createHateSpeechClassificationEvent = (detectedHateSpeech, privateKey, tag
     content: JSON.stringify(detectedHateSpeech),
     sig: ""
   }
+  hateSpeechClassificationEvent.id = getEventHash(hateSpeechClassificationEvent);
+  hateSpeechClassificationEvent.sig = getSignature(hateSpeechClassificationEvent, privateKey);
+  let ok = validateEvent(hateSpeechClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(hateSpeechClassificationEvent);
+  if (!veryOk) return undefined;
+  return hateSpeechClassificationEvent;
+};
+
+const createHateSpeechClassificationNip32Event = (detectedHateSpeech, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let labelNamespace = "app.nfrelay.toxicity";
+  let labelModelName = "atrifat/hate-speech-detector-api";
+  let labelModelUrl = "https://github.com/atrifat/hate-speech-detector-api";
+  let labelScoreType = "float";
+  let labelMinimumScore = 0.5;
+  let labelSchema = ["toxic", "non-toxic"];
+  let labelSchemaOriginal = ["identity_attack", "insult", "obscene", "severe_toxicity", "sexual_explicit", "threat", "toxicity"];
+  let relaySource = "wss://nfrelay.app";
+
+  let hateSpeechClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 1985,
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
+    tags: [
+      ["e", taggedId, relaySource],
+      ["p", taggedAuthor],
+      ["L", labelNamespace],
+      ["label_score_type", labelNamespace, labelScoreType],
+      ["label_model", labelNamespace, labelModelName, labelModelUrl],
+      ["label_minimum_score", labelNamespace, String(labelMinimumScore)],
+      ["label_schema", labelNamespace].concat(labelSchema),
+      ["label_schema_original", labelNamespace].concat(labelSchemaOriginal),
+    ],
+    content: "",
+    sig: ""
+  }
+
+  // Get maximum probability of all classification label
+  const maxScoreHateSpeechDetection = Math.max(...Object.values(detectedHateSpeech).map((score) => parseFloat(score)));
+
+  let toxicScore = maxScoreHateSpeechDetection;
+  let nonToxicScore = 1.0 - toxicScore;
+  let label = (toxicScore >= labelMinimumScore) ? "toxic" : "non-toxic";
+  let score = (toxicScore >= labelMinimumScore) ? toxicScore : nonToxicScore;
+
+  hateSpeechClassificationEvent.tags.push(["l", label, labelNamespace]);
+  hateSpeechClassificationEvent.tags.push(["label_score", label, labelNamespace, String(score)]);
+
+  for (const labelOriginal of labelSchemaOriginal) {
+    if (detectedHateSpeech.hasOwnProperty(labelOriginal)) {
+      hateSpeechClassificationEvent.tags.push(["label_score", labelOriginal, labelNamespace, String(detectedHateSpeech[labelOriginal])]);
+    }
+  }
+
   hateSpeechClassificationEvent.id = getEventHash(hateSpeechClassificationEvent);
   hateSpeechClassificationEvent.sig = getSignature(hateSpeechClassificationEvent, privateKey);
   let ok = validateEvent(hateSpeechClassificationEvent);
@@ -883,12 +939,20 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       }
 
       const hateSpeechClassificationEvent = createHateSpeechClassificationEvent(detectedHateSpeech, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+      const hateSpeechClassificationNip32Event = createHateSpeechClassificationNip32Event(detectedHateSpeech, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
 
       // Publish hateSpeechClassificationEvent
-      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
+      const publishEventResult = (ENABLE_LEGACY_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent) : true;
       if (!publishEventResult) {
         console.info("Fail to publish hateSpeechClassificationEvent event, try again for the last time");
         await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationEvent);
+      }
+
+      // Publish hateSpeechClassificationNip32Event
+      const publishNip32EventResult = (ENABLE_NIP_32_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationNip32Event) : true;
+      if (!publishNip32EventResult) {
+        console.info("Fail to publish hateSpeechClassificationNip32Event event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, hateSpeechClassificationNip32Event);
       }
 
       mqttClient.forEach((client) => {
