@@ -521,6 +521,7 @@ const detectSentiment = async function (text) {
   return result;
 }
 
+// (Deprecated) This function will be removed and replaced with NIP-32 event generator. Consider to use NIP-32 Label event.
 const createSentimentClassificationEvent = (detectedSentiment, privateKey, taggedId, taggedAuthor, createdAt) => {
   let sentimentClassificationEvent = {
     id: "",
@@ -536,6 +537,67 @@ const createSentimentClassificationEvent = (detectedSentiment, privateKey, tagge
     content: JSON.stringify(detectedSentiment),
     sig: ""
   }
+  sentimentClassificationEvent.id = getEventHash(sentimentClassificationEvent);
+  sentimentClassificationEvent.sig = getSignature(sentimentClassificationEvent, privateKey);
+  let ok = validateEvent(sentimentClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(sentimentClassificationEvent);
+  if (!veryOk) return undefined;
+  return sentimentClassificationEvent;
+};
+
+const createSentimentClassificationNip32Event = (detectedSentiment, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let labelNamespace = "app.nfrelay.sentiment";
+  let labelModelName = "atrifat/sentiment-analysis-api";
+  let labelModelUrl = "https://github.com/atrifat/sentiment-analysis-api";
+  let labelScoreType = "float";
+  let labelMinimumScore = 0.35;
+  let labelSchema = ["negative", "neutral", "positive"];
+  let labelSchemaOriginal = ["negative", "neutral", "positive"];
+  let relaySource = "wss://nfrelay.app";
+
+  let sentimentClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 1985,
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
+    tags: [
+      ["e", taggedId, relaySource],
+      ["p", taggedAuthor],
+      ["L", labelNamespace],
+      ["label_score_type", labelNamespace, labelScoreType],
+      ["label_model", labelNamespace, labelModelName, labelModelUrl],
+      ["label_minimum_score", labelNamespace, String(labelMinimumScore)],
+      ["label_schema", labelNamespace].concat(labelSchema),
+      ["label_schema_original", labelNamespace].concat(labelSchemaOriginal),
+    ],
+    content: "",
+    sig: ""
+  }
+
+  let sentimentLabel = "";
+  let sentimentMaxScore = 0.0;
+  for (const label in detectedSentiment) {
+    if (detectedSentiment[label] > sentimentMaxScore) {
+      sentimentMaxScore = parseFloat(detectedSentiment[label] ?? 0.0);
+      sentimentLabel = label;
+    }
+  }
+
+  if (sentimentLabel === "") {
+    return undefined;
+  }
+
+  if (sentimentMaxScore >= labelMinimumScore) {
+    sentimentClassificationEvent.tags.push(["l", sentimentLabel, labelNamespace]);
+  }
+
+  for (const labelOriginal of labelSchemaOriginal) {
+    if (detectedSentiment.hasOwnProperty(labelOriginal)) {
+      sentimentClassificationEvent.tags.push(["label_score", labelOriginal, labelNamespace, String(detectedSentiment[labelOriginal])]);
+    }
+  }
+
   sentimentClassificationEvent.id = getEventHash(sentimentClassificationEvent);
   sentimentClassificationEvent.sig = getSignature(sentimentClassificationEvent, privateKey);
   let ok = validateEvent(sentimentClassificationEvent);
@@ -1011,12 +1073,20 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       console.debug("detectedSentiment", id, JSON.stringify(detectedSentiment), elapsedTime);
 
       const sentimentClassificationEvent = createSentimentClassificationEvent(detectedSentiment, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+      const sentimentClassificationNip32Event = createSentimentClassificationNip32Event(detectedSentiment, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
 
-      // Publish hateSpeechClassificationEvent
-      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
+      // Publish sentimentClassificationEvent
+      const publishEventResult = (ENABLE_LEGACY_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent) : true;
       if (!publishEventResult) {
         console.info("Fail to publish sentimentClassificationEvent event, try again for the last time");
         await publishNostrEvent(pool, relaysToPublish, sentimentClassificationEvent);
+      }
+
+      // Publish sentimentClassificationNip32Event
+      const publishNip32EventResult = (ENABLE_NIP_32_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, sentimentClassificationNip32Event) : true;
+      if (!publishNip32EventResult) {
+        console.info("Fail to publish sentimentClassificationNip32Event event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, sentimentClassificationNip32Event);
       }
 
       mqttClient.forEach((client) => {
