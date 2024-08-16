@@ -630,6 +630,7 @@ const classifyTopic = async function (text) {
   }
 }
 
+// (Deprecated) This function will be removed and replaced with NIP-32 event generator. Consider to use NIP-32 Label event.
 const createTopicClassificationEvent = (topicClassification, privateKey, taggedId, taggedAuthor, createdAt) => {
   let topicClassificationEvent = {
     id: "",
@@ -645,6 +646,53 @@ const createTopicClassificationEvent = (topicClassification, privateKey, taggedI
     content: JSON.stringify(topicClassification),
     sig: ""
   }
+  topicClassificationEvent.id = getEventHash(topicClassificationEvent);
+  topicClassificationEvent.sig = getSignature(topicClassificationEvent, privateKey);
+  let ok = validateEvent(topicClassificationEvent);
+  if (!ok) return undefined;
+  let veryOk = verifySignature(topicClassificationEvent);
+  if (!veryOk) return undefined;
+  return topicClassificationEvent;
+};
+
+const createTopicClassificationNip32Event = (topicClassification, privateKey, taggedId, taggedAuthor, createdAt) => {
+  let labelNamespace = "app.nfrelay.topic";
+  let labelModelName = "atrifat/topic-classification-api";
+  let labelModelUrl = "https://github.com/atrifat/topic-classification-api";
+  let labelScoreType = "float";
+  let labelMinimumScore = 0.35;
+  let labelSchema = ["arts_and_culture", "business_and_entrepreneurs", "celebrity_and_pop_culture", "diaries_and_daily_life", "family", "fashion_and_style", "film_tv_and_video", "fitness_and_health", "food_and_dining", "gaming", "learning_and_educational", "music", "news_and_social_concern", "other_hobbies", "relationships", "science_and_technology", "sports", "travel_and_adventure", "youth_and_student_life"];
+  let labelSchemaOriginal = ["arts_&_culture", "business_&_entrepreneurs", "celebrity_&_pop_culture", "diaries_&_daily_life", "family", "fashion_&_style", "film_tv_&_video", "fitness_&_health", "food_&_dining", "gaming", "learning_&_educational", "music", "news_&_social_concern", "other_hobbies", "relationships", "science_&_technology", "sports", "travel_&_adventure", "youth_&_student_life"];
+  let relaySource = "wss://nfrelay.app";
+
+  let topicClassificationEvent = {
+    id: "",
+    pubkey: getPublicKey(privateKey),
+    kind: 1985,
+    created_at: (createdAt !== undefined) ? createdAt : Math.floor(Date.now() / 1000),
+    tags: [
+      ["e", taggedId, relaySource],
+      ["p", taggedAuthor],
+      ["L", labelNamespace],
+      ["label_score_type", labelNamespace, labelScoreType],
+      ["label_model", labelNamespace, labelModelName, labelModelUrl],
+      ["label_minimum_score", labelNamespace, String(labelMinimumScore)],
+      ["label_schema", labelNamespace].concat(labelSchema),
+      ["label_schema_original", labelNamespace].concat(labelSchemaOriginal),
+    ],
+    content: "",
+    sig: ""
+  }
+
+  for (const classification of topicClassification ?? []) {
+    let label = classification.label;
+    let score = parseFloat(classification.score ?? "0.0");
+    if (score >= labelMinimumScore) {
+      topicClassificationEvent.tags.push(["l", label, labelNamespace]);
+    }
+    topicClassificationEvent.tags.push(["label_score", label, labelNamespace, String(score)]);
+  }
+
   topicClassificationEvent.id = getEventHash(topicClassificationEvent);
   topicClassificationEvent.sig = getSignature(topicClassificationEvent, privateKey);
   let ok = validateEvent(topicClassificationEvent);
@@ -1131,12 +1179,20 @@ const handleNotesEvent = async (relay, sub_id, ev) => {
       console.debug("topicClassificationData", id, JSON.stringify(topicClassificationData), elapsedTime);
 
       const topicClassificationEvent = createTopicClassificationEvent(topicClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
+      const topicClassificationNip32Event = createTopicClassificationNip32Event(topicClassificationData, NOSTR_MONITORING_BOT_PRIVATE_KEY, id, author, created_at);
 
       // Publish topicClassificationEvent
-      const publishEventResult = await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
+      const publishEventResult = (ENABLE_LEGACY_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent) : true;
       if (!publishEventResult) {
         console.info("Fail to publish topicClassificationEvent event, try again for the last time");
         await publishNostrEvent(pool, relaysToPublish, topicClassificationEvent);
+      }
+
+      // Publish topicClassificationNip32Event
+      const publishNip32EventResult = (ENABLE_NIP_32_CLASSIFICATION_EVENT) ? await publishNostrEvent(pool, relaysToPublish, topicClassificationNip32Event) : true;
+      if (!publishNip32EventResult) {
+        console.info("Fail to publish topicClassificationNip32Event event, try again for the last time");
+        await publishNostrEvent(pool, relaysToPublish, topicClassificationNip32Event);
       }
 
       mqttClient.forEach((client) => {
