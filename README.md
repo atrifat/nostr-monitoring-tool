@@ -26,14 +26,14 @@ It will classify note events (kind: 1) content in various category such as:
 
 You can start by cloning this repository to run or modify it locally
 
-```
+```shell
 git clone https://github.com/atrifat/nostr-monitoring-tool
 cd nostr-monitoring-tool
 ```
 
 install its dependencies
 
-```
+```shell
 npm install
 ```
 
@@ -41,36 +41,133 @@ Before running this tool, make sure you have already run your own [atrifat/nsfw-
 
 Copy `.env.example` into `.env` and change `.env` value properly
 
-```
+```shell
 cp .env.example .env
 ```
 
 Now, you can run this tool using command
 
-```
+```shell
 npm run start
 ```
 
 or run it using node command directly
 
-```
+```shell
 node src/index.mjs
 ```
 
-This tool will classify note events and publish classification result as nostr event (kind: 9978).
+This tool will classify note events and publish classification result as NIP-32 event (kind: 1985) or legacy custom event (kind: 9978).
 
-- For NSFW classification, it will publish classification event using **'d'** tag with **'nostr-nsfw-classification'**.
-- For language detection, it will publish classification event using **'d'** tag with **'nostr-language-classification'**.
-- For hate speech detection, it will publish classification event using **'d'** tag with **'nostr-hate-speech-classification'**.
-- For sentiment analysis, it will publish classification event using **'d'** tag with **'nostr-sentiment-classification'**.
-- For topic classification, it will publish classification event using **'d'** tag with **'nostr-topic-classification'**.
-- Other classification tag in new feature will be defined later.
+- For NSFW classification, it will publish **NIP-32 event** using **'L'** tag with namespace **'app.nfrelay.content-safety'** or **legacy classification event** using **'d'** tag with **'nostr-nsfw-classification'**.
+- For language detection, it will publish **NIP-32 event** using **'L'** tag with namespace **'app.nfrelay.language'** or **legacy classification event** using **'d'** tag with **'nostr-language-classification'**.
+- For hate speech detection, it will publish **NIP-32 event** using **'L'** tag with namespace **'app.nfrelay.toxicity'** or **legacy classification event** using **'d'** tag with **'nostr-hate-speech-classification'**.
+- For sentiment analysis, it will publish **NIP-32 event** using **'L'** tag with namespace **'app.nfrelay.sentiment'** or **legacy classification event** using **'d'** tag with **'nostr-sentiment-classification'**.
+- For topic classification, it will publish **NIP-32 event** using **'L'** tag with namespace **'app.nfrelay.topic'** or **legacy classification event** using **'d'** tag with **'nostr-topic-classification'**.
 
-Classification events can be used in another tool such as [nostr-filter-relay](https://github.com/atrifat/nostr-filter-relay) to filter note events.
+Classification events can be used in another tool such as [nostr-filter-relay](https://github.com/atrifat/nostr-filter-relay) to filter note events. Classification event with NIP-32 event structure was documented in [NIP32-COMPATIBILITY.md](https://github.com/atrifat/nostr-filter-relay/blob/main/NIP32-COMPATIBILITY.md).
 
-Classification Event Example:
+Classification Event (NIP-32) Example:
 
+```json
+{
+  "kind": 1985,
+  "id": "eventId",
+  "pubkey": "pubkey",
+  "created_at": 1724725335,
+  "tags": [
+    [
+      "e",
+      "b607571328e99aa08121636251df8148a60fdf534276bf80ffd4da1fa406ee31",
+      "wss://nfrelay.app"
+    ],
+    [
+      "p",
+      "aa51d51cc0768483545fe5a51658bd2f099bd1242baa2a15b3077075917725a5"
+    ],
+    [
+      "L",
+      "app.nfrelay.content-safety"
+    ],
+    [
+      "label_score_type",
+      "app.nfrelay.content-safety",
+      "float"
+    ],
+    [
+      "label_model",
+      "app.nfrelay.content-safety",
+      "atrifat/nsfw-detector-api",
+      "https://github.com/atrifat/nsfw-detector-api"
+    ],
+    [
+      "label_minimum_score",
+      "app.nfrelay.content-safety",
+      "0.5"
+    ],
+    [
+      "label_schema",
+      "app.nfrelay.content-safety",
+      "sfw",
+      "nsfw"
+    ],
+    [
+      "label_schema_original",
+      "app.nfrelay.content-safety",
+      "hentai",
+      "neutral",
+      "pornography",
+      "sexy"
+    ],
+    [
+      "l",
+      "sfw",
+      "app.nfrelay.content-safety"
+    ],
+    [
+      "label_score",
+      "sfw",
+      "app.nfrelay.content-safety",
+      "0.9987854361534119",
+      "https://cdn.fosstodon.org/media_attachments/files/113/031/582/181/280/287/original/345a5e31646fd15f.jpg"
+    ],
+    [
+      "label_score",
+      "hentai",
+      "app.nfrelay.content-safety",
+      "0.0000033156150038848864",
+      "https://cdn.fosstodon.org/media_attachments/files/113/031/582/181/280/287/original/345a5e31646fd15f.jpg"
+    ],
+    [
+      "label_score",
+      "neutral",
+      "app.nfrelay.content-safety",
+      "0.9987854361534119",
+      "https://cdn.fosstodon.org/media_attachments/files/113/031/582/181/280/287/original/345a5e31646fd15f.jpg"
+    ],
+    [
+      "label_score",
+      "pornography",
+      "app.nfrelay.content-safety",
+      "0.0010158189106732607",
+      "https://cdn.fosstodon.org/media_attachments/files/113/031/582/181/280/287/original/345a5e31646fd15f.jpg"
+    ],
+    [
+      "label_score",
+      "sexy",
+      "app.nfrelay.content-safety",
+      "0.00019537744810804725",
+      "https://cdn.fosstodon.org/media_attachments/files/113/031/582/181/280/287/original/345a5e31646fd15f.jpg"
+    ]
+  ],
+  "content": "",
+  "sig": "signature"
+}
 ```
+
+Legacy Classification Event Example:
+
+```json
 {
     "id": "eventId",
     "created_at": 1696817846,
