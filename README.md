@@ -65,6 +65,15 @@ This tool will classify note events and publish classification result as NIP-32 
 - For sentiment analysis, it will publish **NIP-32 event** using **'L'** tag with namespace **'app.nfrelay.sentiment'** or **legacy classification event** using **'d'** tag with **'nostr-sentiment-classification'**.
 - For topic classification, it will publish **NIP-32 event** using **'L'** tag with namespace **'app.nfrelay.topic'** or **legacy classification event** using **'d'** tag with **'nostr-topic-classification'**.
 
+Classification event format (NIP-32 format or legacy format) can be set using .env or environment variable
+
+```shell
+# (Optional. Default: true) Set whether to publish NIP-32 classification event (kind: 1985)
+ENABLE_NIP_32_CLASSIFICATION_EVENT=true
+# (Optional. Default: true) (Deprecated) Set whether to publish legacy classification event (kind: 9978)
+ENABLE_LEGACY_CLASSIFICATION_EVENT=true
+```
+
 Classification events can be used in another tool such as [nostr-filter-relay](https://github.com/atrifat/nostr-filter-relay) to filter note events. Classification event with NIP-32 event structure was documented in [NIP32-COMPATIBILITY.md](https://github.com/atrifat/nostr-filter-relay/blob/main/NIP32-COMPATIBILITY.md).
 
 Classification Event (NIP-32) Example:
